@@ -1,9 +1,0 @@
-{
-  "display_name": "World Modulator",
-  "version": "1.0.0",
-  "author": "WorldModulator",
-  "js": "index.js",
-  "css": "style.css",
-  "loading_order": 30,
-  "homePage": ""
-}
