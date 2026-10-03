@@ -36,11 +36,35 @@ function readRuleDescription(value) {
 }
 
 /** 取对象的第一个字符串值（容忍模型用别的键名） */
+/**
+ * 从模型返回的值里取一段文本。
+ *
+ * 模型对同一字段可能给出字符串、数字、布尔，或包一层对象/数组，
+ * 这里都要能接住——否则像「年龄」返回 18 这种会被整条丢掉。
+ */
 function firstStringValue(value) {
     if (typeof value === 'string') return value.trim();
+    if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+    if (typeof value === 'boolean') return String(value);
+    if (Array.isArray(value)) {
+        for (const item of value) {
+            const text = firstStringValue(item);
+            if (text) return text;
+        }
+        return '';
+    }
     if (value && typeof value === 'object') {
+        // 常见包装：优先取有语义的字段名，避免把 id/时间戳当成内容
+        for (const preferred of ['描述', '内容', '值', '说明', '文本', 'text', 'value', 'description', 'content']) {
+            const item = value[preferred];
+            if (item !== undefined) {
+                const text = firstStringValue(item);
+                if (text) return text;
+            }
+        }
         for (const item of Object.values(value)) {
-            if (typeof item === 'string' && item.trim()) return item.trim();
+            const text = firstStringValue(item);
+            if (text) return text;
         }
     }
     return '';
@@ -273,6 +297,11 @@ export function applyAnalysisResult(ctx, result, options = {}) {
     // 推荐规则
     if (settings?.trackRecommendRules !== false) {
         out.recommended = applyRecommendedRules(chatData, result.recommended_rules || result.推荐规则 || result.规则推荐栏);
+    } else if (Object.keys(chatData.recommendedRules || {}).length > 0) {
+        // 关闭追踪后，旧推荐不应继续留在界面上
+        chatData.recommendedRules = {};
+        out.recommended = [];
+        out.skipped.push('推荐规则（追踪已关闭，已清空旧推荐）');
     }
 
     // 角色档案

@@ -794,15 +794,22 @@ function renderSettings(ctx) {
     if (trackContainer) {
         trackContainer.innerHTML = '';
         for (const def of TRACK_TOGGLE_DEFS) {
+            const key = def.key;
             trackContainer.appendChild(buildToggleRow(
                 def.title,
                 def.hint,
-                settings[def.key] !== false && settings[def.key] !== undefined
-                    ? settings[def.key] === true
-                    : def.key === 'trackWorldState' || def.key === 'trackWorldRules',
+                settings[key] !== false && settings[key] !== undefined
+                    ? settings[key] === true
+                    : key === 'trackWorldState' || key === 'trackWorldRules',
                 (checked) => {
-                    settings[def.key] = checked;
+                    // 重新取一次，别依赖闭包捕获的引用
+                    const latest = getSettings(ctx);
+                    latest[key] = checked;
                     saveSettings(ctx);
+                    // 追踪项影响注入内容，立即重算
+                    if (key === 'trackWorldRules' || key === 'trackWorldState' || key === 'trackWardrobe') {
+                        applyInjection(ctx);
+                    }
                 },
             ));
         }
