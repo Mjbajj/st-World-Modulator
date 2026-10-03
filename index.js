@@ -28,17 +28,29 @@ import {
 import {
     DEFAULT_SETTINGS,
     createEmptyCharacter,
+    addRuleDraft,
+    clearRetiredRules,
+    clearRuleDrafts,
+    copyCharacterToCurrentChat,
+    copyRuleToCurrentChat,
+    copyWardrobeToCurrentChat,
     dropChatData,
+    formatRuleDrafts,
     getChatData,
     getChatKey,
     getContextSafe,
     getMergedCharacters,
     getMergedRules,
     getPresetPromptOverrides,
+    getRetiredRuleNames,
+    getRuleDrafts,
     getSettings,
+    listSiblingChatData,
     normalizeApiProfiles,
     removeCharacter,
     removeRule,
+    removeRuleDraft,
+    reviveRule,
     applyApiProfile,
     clearPresetPromptOverrides,
     deleteApiProfile,
@@ -47,9 +59,11 @@ import {
     saveSettingsNow,
     setPresetPromptOverride,
     setRule,
+    updateRuleDraft,
     upsertCharacter,
 } from './scripts/state.js';
 import {
+    callAnalyzer,
     fetchModelList,
     getDebugInfo,
     getPresetPrompts,
@@ -378,6 +392,72 @@ function renderRules(ctx) {
         item.append(content, actions);
         list.appendChild(item);
     }
+
+    renderRuleDrafts(ctx);
+    renderRetiredRules(ctx);
+}
+
+/** 渲染规则待办草稿 */
+function renderRuleDrafts(ctx) {
+    const container = $('#wm-draft-list');
+    if (!container) return;
+    const drafts = getRuleDrafts(ctx);
+    container.innerHTML = '';
+
+    if (drafts.length === 0) {
+        container.appendChild(el('div', 'wm-item-desc', '待办为空。在上方输入框写下想要的大致规则，点「加入待办」。'));
+        return;
+    }
+
+    for (const draft of drafts) {
+        const item = el('div', 'wm-draft-item');
+        const text = el('div', 'wm-draft-text', draft.text);
+        text.title = draft.text;
+        text.addEventListener('click', () => onEditRuleDraft(ctx, draft));
+
+        const del = el('button', 'wm-item-delete', '✕');
+        del.title = '删除这条待办';
+        del.addEventListener('click', () => {
+            removeRuleDraft(ctx, draft.id);
+            renderRuleDrafts(ctx);
+        });
+
+        item.append(text, del);
+        container.appendChild(item);
+    }
+}
+
+/** 渲染已失效规则 */
+function renderRetiredRules(ctx) {
+    const group = $('#wm-retired-group');
+    const list = $('#wm-retired-list');
+    if (!group || !list) return;
+    const names = getRetiredRuleNames(ctx);
+    if (names.length === 0) {
+        group.style.display = 'none';
+        list.innerHTML = '';
+        return;
+    }
+    group.style.display = '';
+    list.innerHTML = '';
+    for (const name of names) {
+        const item = el('div', 'wm-list-item');
+        const content = el('div', 'wm-item-content');
+        content.appendChild(el('div', 'wm-item-title', name));
+        content.appendChild(el('div', 'wm-item-desc', '该规则已被删除或停用，注入时会告知主模型它不再生效。'));
+
+        const actions = el('div', 'wm-item-actions');
+        const revive = el('button', 'wm-btn-icon wm-no-spin', '↺');
+        revive.title = '从失效名单移除';
+        revive.addEventListener('click', () => {
+            reviveRule(ctx, name);
+            renderRules(ctx);
+            applyInjection(ctx);
+        });
+        actions.appendChild(revive);
+        item.append(content, actions);
+        list.appendChild(item);
+    }
 }
 
 function buildEmptyState(text) {
@@ -446,6 +526,14 @@ function renderCharacters(ctx) {
     const characters = getMergedCharacters(ctx, settings);
     const fields = getProfileFields(settings?.profileMode || PROFILE_MODES.SIMPLE);
     const keyword = uiState.charSearch.trim().toLowerCase();
+
+    // 档案版本切换器在角色页，高亮跟着当前设置走
+    const modeGroup = $('#wm-profile-mode');
+    if (modeGroup) {
+        $$('.wm-scope-btn', modeGroup).forEach((btn) => {
+            btn.classList.toggle('wm-active', btn.dataset.mode === (settings?.profileMode || PROFILE_MODES.SIMPLE));
+        });
+    }
 
     list.innerHTML = '';
     const entries = Object.entries(characters)
@@ -696,17 +784,10 @@ function renderSettings(ctx) {
     renderProfileSelect(ctx);
     renderModelOptions(ctx);
     renderPresetOptions(ctx);
+    renderSiblingList(ctx);
 
     const usePreset = $('#wm-use-preset');
     if (usePreset) usePreset.checked = settings.usePreset === true;
-
-    // 档案版本
-    const modeGroup = $('#wm-profile-mode');
-    if (modeGroup) {
-        $$('.wm-scope-btn', modeGroup).forEach((btn) => {
-            btn.classList.toggle('wm-active', btn.dataset.mode === (settings.profileMode || PROFILE_MODES.SIMPLE));
-        });
-    }
 
     // 追踪开关
     const trackContainer = $('#wm-track-toggles');
@@ -725,6 +806,14 @@ function renderSettings(ctx) {
                 },
             ));
         }
+    }
+}
+
+/** 回填单个输入框；正在编辑该框时不覆盖用户输入 */
+function setValue(selector, value) {
+    const input = $(selector);
+    if (input && document.activeElement !== input) {
+        input.value = value ?? '';
     }
 }
 
@@ -918,6 +1007,226 @@ function switchTab(tab) {
 // 事件处理：规则
 // ─────────────────────────────────────────────
 
+/** 渲染跨卡搬运栏 */
+function renderSiblingList(ctx) {
+    const container = $('#wm-sibling-list');
+    if (!container) return;
+    const settings = getSettings(ctx);
+    const siblings = listSiblingChatData(ctx, settings);
+    container.innerHTML = '';
+
+    if (siblings.length === 0) {
+        container.appendChild(el('div', 'wm-item-desc', '没有找到其他角色卡的数据。在其他卡里创建规则或角色后，这里会列出来。'));
+        return;
+    }
+
+    for (const sibling of siblings) {
+        const block = el('div', 'wm-sibling-block');
+
+        const header = el('div', 'wm-sibling-header');
+        const title = el('div', 'wm-sibling-title', sibling.chatKey);
+        title.title = sibling.chatKey;
+        const meta = el('div', 'wm-sibling-meta',
+            `规则 ${sibling.ruleCount} · 角色 ${sibling.charCount} · 衣柜 ${sibling.wardrobeCount}`);
+        const arrow = el('span', 'wm-sibling-arrow', '▸');
+        header.append(arrow, title, meta);
+
+        const body = el('div', 'wm-sibling-body');
+        body.style.display = 'none';
+        header.addEventListener('click', () => {
+            const open = body.style.display !== 'none';
+            body.style.display = open ? 'none' : '';
+            arrow.textContent = open ? '▸' : '▾';
+        });
+
+        // 规则
+        const ruleNames = Object.keys(sibling.rules);
+        if (ruleNames.length > 0) {
+            body.appendChild(el('div', 'wm-sibling-section', '规则'));
+            for (const name of ruleNames) {
+                body.appendChild(buildSiblingItem(
+                    name,
+                    String(sibling.rules[name]?.description || ''),
+                    () => {
+                        copyRuleToCurrentChat(ctx, sibling.chatKey, name, settings);
+                        renderRules(ctx);
+                        applyInjection(ctx);
+                        toast(`已复制规则「${name}」到当前卡`, 'success');
+                    },
+                ));
+            }
+        }
+
+        // 角色
+        const charNames = Object.keys(sibling.characters);
+        if (charNames.length > 0) {
+            body.appendChild(el('div', 'wm-sibling-section', '角色'));
+            for (const name of charNames) {
+                const profile = sibling.characters[name]?.profile || {};
+                const desc = Object.entries(profile).slice(0, 3)
+                    .map(([k, v]) => `${k}：${v}`).join(' · ');
+                body.appendChild(buildSiblingItem(name, desc, () => {
+                    copyCharacterToCurrentChat(ctx, sibling.chatKey, name, settings);
+                    renderCharacters(ctx);
+                    applyInjection(ctx);
+                    toast(`已复制角色「${name}」到当前卡`, 'success');
+                }));
+            }
+        }
+
+        // 衣柜
+        const wardrobeNames = Object.keys(sibling.wardrobe);
+        if (wardrobeNames.length > 0) {
+            body.appendChild(el('div', 'wm-sibling-section', '衣柜'));
+            for (const name of wardrobeNames) {
+                const entries = Array.isArray(sibling.wardrobe[name]) ? sibling.wardrobe[name] : [];
+                body.appendChild(buildSiblingItem(name, `${entries.length} 条穿着记录`, () => {
+                    copyWardrobeToCurrentChat(ctx, sibling.chatKey, name, settings);
+                    renderWardrobe(ctx);
+                    applyInjection(ctx);
+                    toast(`已复制「${name}」的衣柜到当前卡`, 'success');
+                }));
+            }
+        }
+
+        block.append(header, body);
+        container.appendChild(block);
+    }
+}
+
+function buildSiblingItem(name, desc, onCopy) {
+    const item = el('div', 'wm-sibling-item');
+    const content = el('div', 'wm-item-content');
+    content.appendChild(el('div', 'wm-item-title', name));
+    if (desc) content.appendChild(el('div', 'wm-item-desc', desc));
+    const actions = el('div', 'wm-item-actions');
+    const btn = el('button', 'wm-btn', '复制');
+    btn.style.fontSize = '11px';
+    btn.style.padding = '4px 10px';
+    btn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        onCopy();
+    });
+    actions.appendChild(btn);
+    item.append(content, actions);
+    return item;
+}
+
+// ─────────────────────────────────────────────
+// 事件处理：规则待办
+// ─────────────────────────────────────────────
+
+/** 把输入框内容加进待办 */
+function onAddRuleDraft(ctx) {
+    const input = $('#wm-draft-input');
+    const text = String(input?.value || '').trim();
+    if (!text) return toast('请先写下想要的大致规则', 'warning');
+    addRuleDraft(ctx, text);
+    if (input) input.value = '';
+    renderRuleDrafts(ctx);
+    setDraftStatus(ctx, '已加入待办');
+}
+
+function setDraftStatus(ctx, message) {
+    const el2 = $('#wm-draft-status');
+    if (!el2) return;
+    const count = getRuleDrafts(ctx).length;
+    el2.textContent = count > 0 ? `${message}（当前待办 ${count} 条）` : message;
+}
+
+async function onEditRuleDraft(ctx, draft) {
+    const result = await openModal({
+        title: '编辑待办',
+        fields: [{ key: 'text', label: '规则要求', type: 'textarea', value: draft.text }],
+    });
+    if (!result) return;
+    const text = String(result.text || '').trim();
+    if (!text) return toast('内容不能为空', 'warning');
+    updateRuleDraft(ctx, draft.id, text);
+    renderRuleDrafts(ctx);
+}
+
+/** 方式一：拼成文本送进酒馆输入框（用户可继续编辑再发送） */
+function onDraftsToInput(ctx) {
+    const drafts = getRuleDrafts(ctx);
+    if (drafts.length === 0) return toast('待办为空', 'warning');
+    const text = formatRuleDrafts(ctx);
+    try {
+        const textarea = document.querySelector('#send_textarea');
+        if (!textarea) throw new Error('找不到酒馆输入框 #send_textarea');
+        const existing = String(textarea.value || '');
+        textarea.value = existing ? `${existing}\n${text}` : text;
+        textarea.dispatchEvent(new Event('input', { bubbles: true }));
+        textarea.focus();
+        toast('已插入输入框，可继续编辑后发送', 'success');
+    } catch (error) {
+        // 退而求其次：写进剪贴板，用户自行粘贴
+        try {
+            void navigator.clipboard?.writeText?.(text);
+            toast('未能写入输入框，已复制到剪贴板', 'warning');
+        } catch {
+            toast(`插入失败：${error?.message || error}`, 'error');
+        }
+    }
+}
+
+/** 方式二：不进输入框，直接交给分析模型整理成正式规则并写回规则表 */
+async function onDraftsToAnalyzer(ctx) {
+    const drafts = getRuleDrafts(ctx);
+    if (drafts.length === 0) return toast('待办为空', 'warning');
+
+    const button = $('#wm-draft-to-ai');
+    const status = $('#wm-draft-status');
+    if (button) button.disabled = true;
+    if (status) status.textContent = '正在让分析模型整理规则…';
+
+    try {
+        const settings = getSettings(ctx);
+        const requirement = drafts.map((d) => `- ${d.text}`).join('\n');
+        const systemPrompt = [
+            '你是一个规则整理助手。用户会给出若干条「大致想法」，请把它们整理成规范的世界规则条目。',
+            '',
+            '【输出要求】',
+            '1. 只输出一个 JSON 对象，不要 Markdown 代码块，不要解释文字。',
+            '2. 结构：{"world_rules": {"规则名": {"规则描述": "..."}}}',
+            '3. 规则名要具体、可辨识，禁止用数字或代号。',
+            '4. 规则描述要说清这条规则如何改变世界，控制在 80 字以内。',
+            '5. 保留用户原意，可补充使其自洽的细节，但不得改变方向或添加用户没提到的内容。',
+            '6. 使用简体中文。',
+        ].join('\n');
+        const payload = {
+            user_requirements: requirement,
+            existing_rules: Object.keys(getMergedRules(ctx, settings)),
+        };
+
+        const result = await callAnalyzer(settings, ctx, { systemPrompt, payload });
+        const rules = result?.world_rules && typeof result.world_rules === 'object' ? result.world_rules : {};
+        const names = Object.keys(rules);
+        if (names.length === 0) {
+            if (status) status.textContent = '模型没有返回可用规则';
+            return toast('模型没有返回可用规则', 'warning');
+        }
+
+        for (const [name, value] of Object.entries(rules)) {
+            const description = String(value?.规则描述 || value?.description || value || '').trim();
+            if (!name || !description) continue;
+            setRule(ctx, name, description, SCOPES.LOCAL, settings);
+        }
+        saveSettings(ctx);
+        clearRuleDrafts(ctx);
+        renderRules(ctx);
+        applyInjection(ctx);
+        if (status) status.textContent = `已生成并写入 ${names.length} 条规则`;
+        toast(`已生成 ${names.length} 条规则`, 'success');
+    } catch (error) {
+        const message = String(error?.message || error);
+        if (status) status.textContent = `失败：${message}`;
+        toast(`生成失败：${message}`, 'error');
+    } finally {
+        if (button) button.disabled = false;
+    }
+}
+
 async function onAddRule(ctx) {
     const result = await openModal({
         title: '新增规则',
@@ -959,7 +1268,10 @@ function onToggleRule(ctx, name, rule) {
     const scope = rule.scope || SCOPES.LOCAL;
     const target = scope === SCOPES.GLOBAL ? settings.globalRules : getChatData(ctx, settings).rules;
     if (!target[name]) return;
-    target[name].enabled = target[name].enabled === false;
+    const nowEnabled = target[name].enabled === false;
+    target[name].enabled = nowEnabled;
+    // 重新启用时把它从失效名单里摘掉，避免注入时自相矛盾
+    if (nowEnabled) reviveRule(ctx, name, settings);
     saveSettings(ctx);
     applyInjection(ctx);
     renderRules(ctx);
@@ -1335,6 +1647,31 @@ function bindEvents(ctx) {
         renderRules(ctx);
     }, 150));
 
+    // 规则待办
+    $('#wm-draft-add')?.addEventListener('click', () => onAddRuleDraft(ctx));
+    $('#wm-draft-input')?.addEventListener('keydown', (event) => {
+        // Ctrl/Cmd + Enter 快速加入
+        if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+            event.preventDefault();
+            onAddRuleDraft(ctx);
+        }
+    });
+    $('#wm-draft-to-input')?.addEventListener('click', () => onDraftsToInput(ctx));
+    $('#wm-draft-to-ai')?.addEventListener('click', () => { void onDraftsToAnalyzer(ctx); });
+    $('#wm-draft-clear')?.addEventListener('click', () => {
+        if (getRuleDrafts(ctx).length === 0) return;
+        if (!confirmDialog('确定清空全部规则待办？')) return;
+        clearRuleDrafts(ctx);
+        renderRuleDrafts(ctx);
+        setDraftStatus(ctx, '已清空');
+    });
+    $('#wm-retired-clear')?.addEventListener('click', () => {
+        clearRetiredRules(ctx);
+        renderRules(ctx);
+        applyInjection(ctx);
+        toast('已清空失效记录', 'success');
+    });
+
     // 角色
     $('#wm-char-add')?.addEventListener('click', () => onAddCharacter(ctx));
     $('#wm-char-search')?.addEventListener('input', debounce((event) => {
@@ -1506,21 +1843,36 @@ function bindEvents(ctx) {
         saveSettings(ctx);
     });
 
-    // 档案版本
-    $$('#wm-profile-mode .wm-scope-btn').forEach((btn) => {
-        btn.addEventListener('click', () => {
-            const settings = getSettings(ctx);
-            settings.profileMode = btn.dataset.mode;
-            saveSettings(ctx);
-            renderSettings(ctx);
-            renderCharacters(ctx);
-            applyInjection(ctx);
-        });
+    // 档案版本（在角色页，用事件委托以便面板重渲染后依然有效）
+    document.addEventListener('click', (event) => {
+        const btn = event.target?.closest?.('#wm-profile-mode .wm-scope-btn');
+        if (!btn) return;
+        const mode = btn.dataset.mode;
+        if (!mode) return;
+        const settings = getSettings(ctx);
+        if (settings.profileMode === mode) return;
+        settings.profileMode = mode;
+        saveSettings(ctx);
+        renderCharacters(ctx);
+        renderSettings(ctx);
+        applyInjection(ctx);
+        toast(mode === 'full' ? '已切换到正常版档案' : '已切换到简化版档案', 'info');
     });
 
     // 数据
     $('#wm-data-export')?.addEventListener('click', () => onExportData(ctx));
     $('#wm-data-clear-chat')?.addEventListener('click', () => onClearChatData(ctx));
+    $('#wm-data-import')?.addEventListener('click', () => $('#wm-data-import-file')?.click());
+    $('#wm-data-import-file')?.addEventListener('change', (event) => {
+        const file = event.target?.files?.[0];
+        void onImportData(ctx, file).finally(() => {
+            if (event.target) event.target.value = '';
+        });
+    });
+    $('#wm-sibling-refresh')?.addEventListener('click', () => {
+        renderSiblingList(ctx);
+        toast('已刷新跨卡列表', 'info');
+    });
 }
 
 // ─────────────────────────────────────────────
@@ -1557,6 +1909,8 @@ function onExportData(ctx) {
         globalRules: settings.globalRules,
         globalCharacters: settings.globalCharacters,
         chatData: getChatData(ctx, settings),
+        exportedBy: 'World Modulator',
+        schemaVersion: 1,
     };
     try {
         const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
@@ -1570,6 +1924,59 @@ function onExportData(ctx) {
     } catch (error) {
         console.error(`[${MODULE_NAME}] 导出失败`, error);
         toast('导出失败，详见控制台', 'error');
+    }
+}
+
+/** 从导出的 JSON 恢复数据 */
+async function onImportData(ctx, file) {
+    if (!file) return;
+    try {
+        const text = await file.text();
+        const payload = JSON.parse(text);
+        if (!payload || typeof payload !== 'object') throw new Error('文件内容不是有效的 JSON 对象');
+
+        const settings = getSettings(ctx);
+        const incoming = payload.settings || {};
+
+        // 连接与预设设置：整体覆盖（导出时已含这些字段）
+        for (const key of [
+            'enabled', 'profileMode', 'injectToggles', 'modulatorInjection',
+            'apiMode', 'apiUrl', 'model', 'temperature', 'usePreset', 'presetName',
+            'presetPromptOverrides', 'apiProfiles',
+            'trackWorldState', 'trackWorldRules', 'trackRecommendRules', 'trackWardrobe',
+            'pollMs', 'contextSize', 'settleMs',
+        ]) {
+            if (incoming[key] !== undefined) settings[key] = incoming[key];
+        }
+        settings.apiProfiles = normalizeApiProfiles(settings.apiProfiles);
+
+        if (payload.globalRules && typeof payload.globalRules === 'object') {
+            settings.globalRules = { ...settings.globalRules, ...payload.globalRules };
+        }
+        if (payload.globalCharacters && typeof payload.globalCharacters === 'object') {
+            settings.globalCharacters = { ...settings.globalCharacters, ...payload.globalCharacters };
+        }
+
+        // 聊天数据合并进当前聊天
+        if (payload.chatData && typeof payload.chatData === 'object') {
+            const current = getChatData(ctx, settings);
+            for (const key of ['worldState', 'rules', 'recommendedRules', 'characters', 'wardrobe', 'retiredRules']) {
+                const value = payload.chatData[key];
+                if (!value || typeof value !== 'object') continue;
+                current[key] = { ...(current[key] || {}), ...value };
+            }
+            if (Array.isArray(payload.chatData.ruleDrafts)) {
+                current.ruleDrafts = payload.chatData.ruleDrafts;
+            }
+        }
+
+        await saveSettingsNow(ctx);
+        renderAll(ctx);
+        applyInjection(ctx);
+        toast('数据已导入', 'success');
+    } catch (error) {
+        console.error(`[${MODULE_NAME}] 导入失败`, error);
+        toast(`导入失败：${error?.message || error}`, 'error');
     }
 }
 

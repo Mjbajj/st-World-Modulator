@@ -9,7 +9,7 @@
  */
 
 import { MODULE_NAME, PROFILE_MODES, getProfileFields } from './prompts.js';
-import { getChatData, getMergedCharacters, getMergedRules, getSettings } from './state.js';
+import { getChatData, getMergedCharacters, getMergedRules, getRetiredRuleNames, getSettings } from './state.js';
 
 /** 注入用的键前缀 */
 const KEY_BASE = `${MODULE_NAME}_inject`;
@@ -43,15 +43,37 @@ export function renderWorldState(chatData) {
     return `【世界状态】\n${lines.join('\n')}`;
 }
 
-/** 世界规则 → 文本。只输出启用中的规则。 */
-export function renderWorldRules(rules) {
-    const entries = Object.entries(rules || {})
-        .filter(([, rule]) => rule && rule.enabled !== false && String(rule.description || '').trim());
-    if (entries.length === 0) return '';
-    const body = entries
-        .map(([name, rule]) => `- ${name}：${rule.description}`)
-        .join('\n');
-    return `【世界规则】\n以下是本世界当前生效的规则，叙事必须严格遵守：\n${body}`;
+/**
+ * 世界规则 → 文本。
+ *
+ * 生效规则正常列出；被关闭或删除的规则要显式声明「已失效」——
+ * 否则主模型可能仍按上一轮提示词里的旧规则继续叙事。
+ * @param {object} rules 合并后的规则表
+ * @param {string[]} retiredNames 已失效规则名（来自本轮禁用/删除的记录）
+ */
+export function renderWorldRules(rules, retiredNames = []) {
+    const entries = Object.entries(rules || {});
+    const active = entries.filter(([, rule]) => (
+        rule && rule.enabled !== false && String(rule.description || '').trim()
+    ));
+    const disabled = entries.filter(([, rule]) => rule && rule.enabled === false);
+
+    // 合并显式失效名单与当前处于禁用状态的规则，去重
+    const retired = [...new Set([
+        ...(Array.isArray(retiredNames) ? retiredNames : []),
+        ...disabled.map(([name]) => name),
+    ])].filter((name) => name && !active.some(([n]) => n === name));
+
+    const blocks = [];
+    if (active.length > 0) {
+        const body = active.map(([name, rule]) => `- ${name}：${rule.description}`).join('\n');
+        blocks.push(`【世界规则】\n以下是本世界当前生效的规则，叙事必须严格遵守：\n${body}`);
+    }
+    if (retired.length > 0) {
+        const body = retired.map((name) => `- ${name}`).join('\n');
+        blocks.push(`【已失效规则】\n以下规则已被废除，**不再生效**。叙事中不得再依据这些规则行事，也不得让角色表现出受其约束的迹象：\n${body}`);
+    }
+    return blocks.join('\n\n');
 }
 
 /** 角色档案 → 文本 */
@@ -116,7 +138,10 @@ export function buildInjectionSegments(ctx) {
         if (text) segments.worldState = text;
     }
     if (toggles.worldRules) {
-        const text = renderWorldRules(getMergedRules(ctx, settings));
+        const text = renderWorldRules(
+            getMergedRules(ctx, settings),
+            getRetiredRuleNames(ctx, settings),
+        );
         if (text) segments.worldRules = text;
     }
     if (toggles.characters) {

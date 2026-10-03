@@ -271,7 +271,10 @@ export const WORLD_RULE_UPDATE_RULES = `世界状态更新规则:
 
   世界规则:
     check:
-      - 当正文中出现新的世界规则、或已有规则被修改/取消时，更新对应条目。
+      - **只处理 {{user}} 明确下达的规则增删改指令**，例如「新增规则：重力减半」「把XX规则删掉」「修改XX规则为……」。
+      - 判断依据是 {{user}} 消息中是否出现明确的增/删/改意图，而不是正文里是否出现了某种设定描写。
+      - 角色扮演正文中的场景描写、角色对话、旁白设定、背景叙述**一律不算规则指令**，绝不因此新增、修改或删除规则。
+      - 未发现明确的规则指令时，world_rules 返回空对象 {}，不要凭空生成规则。
       - 规则名称必须具体，禁止使用数字或代号。`;
 
 export const RULE_RECOMMEND_UPDATE_RULES = `推荐规则生成规则:
@@ -316,7 +319,8 @@ export const WARDROBE_UPDATE_RULES = `角色衣柜更新规则:
 // 默认注入主模型的调制器提示词
 // ─────────────────────────────────────────────
 
-export const DEFAULT_MODULATOR_INJECTION = `### 核心功能：World Modulator
+export const DEFAULT_MODULATOR_INJECTION = `<World Modulator>
+### 核心功能：World Modulator
 - 拥有者：仅 {{user}}。
 - 能力本质：无视物理法则与现实逻辑，强制修改世界万物的规则或状态。
 - 修改效果：
@@ -363,7 +367,8 @@ export const DEFAULT_MODULATOR_INJECTION = `### 核心功能：World Modulator
 **例4（外观修改 + 自身感知屏蔽）**
 修改前：一个人是黑色短发。
 修改规则：他变成金色长发，仅修改自身，不辐射他人认知。
-修改后：他顶着金色长发出门，自己完全不觉得有任何异样，梳头、扎辫子动作自然熟练，脑子里没有"我以前是短发"这个信息。熟人则纷纷侧目，觉得一个男人突然变了发型和发色很奇怪。`;
+修改后：他顶着金色长发出门，自己完全不觉得有任何异样，梳头、扎辫子动作自然熟练，脑子里没有"我以前是短发"这个信息。熟人则纷纷侧目，觉得一个男人突然变了发型和发色很奇怪。
+</World Modulator>`;
 
 // ─────────────────────────────────────────────
 // 分析模型系统提示词
@@ -403,6 +408,12 @@ export function buildAnalyzerSystemPrompt(options = {}) {
         '{"world_state": {...}, "world_rules": {...}, "recommended_rules": {...}, "characters": {...}, "wardrobe": {...}, "summary": "..."}',
         '',
         '所有字段均为可选，没有变化时省略。',
+        '',
+        '【区分「用户指令」与「剧情叙述」——非常重要】',
+        '载荷 recent_messages 中 is_user 为 true 的消息是 {{user}} 本人说的话。',
+        '只有当 {{user}} 在这些消息里**明确下达规则相关的指令**（新增/修改/删除某条规则）时，才更新 world_rules。',
+        '角色扮演的正文叙述、场景描写、角色台词、旁白设定都不是规则指令，不得据此改动规则表。',
+        '若 {{user}} 只是在进行角色扮演对话，world_rules 必须是空对象 {}。',
         '',
         '【世界状态】',
         WORLD_RULE_UPDATE_RULES,

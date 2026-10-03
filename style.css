@@ -676,3 +676,104 @@
 @media (max-width: 560px) {
   .wm-preset-prompt-list { max-height: 200px; }
 }
+
+/* ====== 角色页内联的档案版本切换 ====== */
+.wm-profile-mode-inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+.wm-profile-mode-label {
+  font-size: 11px;
+  color: var(--wm-text-mute);
+  white-space: nowrap;
+}
+.wm-profile-mode-inline .wm-scope-group { margin: 0; }
+
+@media (max-width: 560px) {
+  .wm-profile-mode-inline { margin-left: 0; width: 100%; justify-content: flex-end; }
+}
+
+/* ====== 规则待办 ====== */
+.wm-draft-list {
+  margin-top: 10px;
+  max-height: 240px;
+  border: 1px solid var(--wm-line);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.25);
+  padding: 4px 8px;
+}
+.wm-draft-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 2px;
+  border-bottom: 1px dashed rgba(255, 255, 255, 0.06);
+}
+.wm-draft-item:last-child { border-bottom: none; }
+.wm-draft-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--wm-text);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  cursor: pointer;
+}
+.wm-draft-text:hover { color: var(--wm-cyan); }
+
+/* ====== 跨卡搬运 ====== */
+.wm-sibling-block {
+  border: 1px solid var(--wm-line);
+  border-radius: 8px;
+  margin-bottom: 8px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.2);
+}
+.wm-sibling-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.wm-sibling-header:hover { background: rgba(0, 191, 255, 0.08); }
+.wm-sibling-arrow { color: var(--wm-cyan); font-size: 11px; flex-shrink: 0; width: 12px; }
+.wm-sibling-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--wm-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wm-sibling-meta { font-size: 11px; color: var(--wm-text-mute); flex-shrink: 0; }
+.wm-sibling-body {
+  padding: 4px 12px 10px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.08);
+  max-height: 320px;
+  overflow-y: auto;
+}
+.wm-sibling-body::-webkit-scrollbar { width: 4px; }
+.wm-sibling-body::-webkit-scrollbar-thumb { background: rgba(0, 191, 255, 0.3); border-radius: 4px; }
+.wm-sibling-section {
+  font-size: 11px;
+  color: var(--wm-amber);
+  font-weight: 600;
+  margin: 10px 0 4px;
+  opacity: 0.9;
+}
+.wm-sibling-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 2px;
+  border-bottom: 1px dashed rgba(255, 255, 255, 0.05);
+}
+.wm-sibling-item:last-child { border-bottom: none; }
