@@ -1,0 +1,27 @@
+# 依赖与构建产物
+node_modules/
+dist/
+build/
+
+# 编辑器与系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 日志与临时文件
+*.log
+*.tmp
+*.bak
+_smoke*.mjs
+_dbg*.mjs
+_boot*.mjs
+_chk*.mjs
+_imp*.mjs
+_new*.mjs
+_t.mjs
+
+# 本地私密配置（可能含 API Key）
+.env
+.env.local
