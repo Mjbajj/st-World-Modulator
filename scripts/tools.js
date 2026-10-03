@@ -19,6 +19,7 @@ import {
     appendWardrobeEntry,
     getChatData,
     getSettings,
+    getWardrobeEntries,
     saveSettings,
     upsertCharacter,
 } from './state.js';
@@ -212,6 +213,41 @@ function applyCharacterFields(ctx, settings, name, fields) {
  * 写入衣柜纪录。
  * @returns {{name:string, count:number}[]}
  */
+/** 归一化穿着描述，用于比对是否同一条记录 */
+function normalizeOutfitText(text) {
+    return String(text || '')
+        .replace(/\s+/g, '')
+        .replace(/[，。；、,.;:：！!？?"'“”‘’（）()【】\[\]]/g, '')
+        .toLowerCase();
+}
+
+/**
+ * 判断这条穿着是否已经记过。
+ *
+ * 模型有时会把载荷里的历史衣柜当成新变化重发一遍，导致同一条被反复追加。
+ * 除了提示词约束，这里再做一道代码防线：与该角色最近的记录比对，
+ * 完全一致就跳过。
+ */
+function isDuplicateWardrobe(ctx, settings, name, entry) {
+    const existing = getWardrobeEntries(ctx, name, settings);
+    if (existing.length === 0) return false;
+
+    const outfitKey = normalizeOutfitText(entry.outfit);
+    if (!outfitKey) return false;
+
+    // 只比最近若干条，避免长历史拖慢
+    const recent = existing.slice(-10);
+    return recent.some((old) => {
+        if (normalizeOutfitText(old.outfit) !== outfitKey) return false;
+        // 描述相同的情况下，时间或场合不同才算新记录
+        const oldTime = String(old.time || '').trim();
+        const newTime = String(entry.time || '').trim();
+        const oldScene = String(old.scene || '').trim();
+        const newScene = String(entry.scene || '').trim();
+        return oldTime === newTime && oldScene === newScene;
+    });
+}
+
 function applyWardrobe(ctx, settings, wardrobe) {
     const record = normalizeRecord(wardrobe);
     const out = [];
@@ -220,11 +256,17 @@ function applyWardrobe(ctx, settings, wardrobe) {
         if (!name) continue;
         const entries = Array.isArray(value) ? value : [value];
         let count = 0;
+        let skipped = 0;
         for (const entry of entries) {
             if (!entry || typeof entry !== 'object') {
                 const text = firstStringValue(entry);
                 if (!text) continue;
-                appendWardrobeEntry(ctx, name, { outfit: text }, settings);
+                const candidate = { outfit: text, time: '', scene: '' };
+                if (isDuplicateWardrobe(ctx, settings, name, candidate)) {
+                    skipped += 1;
+                    continue;
+                }
+                appendWardrobeEntry(ctx, name, candidate, settings);
                 count += 1;
                 continue;
             }
@@ -234,14 +276,20 @@ function applyWardrobe(ctx, settings, wardrobe) {
                 || entry.服饰 || entry.描述 || entry.内容 || '',
             ).trim();
             if (!outfit) continue;
-            appendWardrobeEntry(ctx, name, {
+            const candidate = {
                 time: String(entry.time || entry.时间 || entry.日期 || ''),
                 scene: String(entry.scene || entry.场合 || entry.场景 || entry.地点 || ''),
                 outfit,
-            }, settings);
+            };
+            // 同一条穿着重复输出时跳过，避免历史里出现重复项
+            if (isDuplicateWardrobe(ctx, settings, name, candidate)) {
+                skipped += 1;
+                continue;
+            }
+            appendWardrobeEntry(ctx, name, candidate, settings);
             count += 1;
         }
-        if (count > 0) out.push({ name, count });
+        if (count > 0 || skipped > 0) out.push({ name, count, skipped });
     }
     return out;
 }
@@ -366,7 +414,11 @@ export function describeApplied(out) {
     if (out.rules.removed.length > 0) parts.push(`删除规则 ${out.rules.removed.length}`);
     if (out.recommended.length > 0) parts.push(`推荐 ${out.recommended.length} 条`);
     if (out.characters.length > 0) parts.push(`角色 ${out.characters.map((c) => c.name).join('、')}`);
-    if (out.wardrobe.length > 0) parts.push(`衣柜 ${out.wardrobe.length} 人`);
+    if (out.wardrobe.length > 0) {
+        const added = out.wardrobe.reduce((sum, item) => sum + (item.count || 0), 0);
+        const skipped = out.wardrobe.reduce((sum, item) => sum + (item.skipped || 0), 0);
+        parts.push(skipped > 0 ? `衣柜 +${added}（跳过重复 ${skipped}）` : `衣柜 +${added}`);
+    }
     if (parts.length === 0) parts.push('本轮无变化');
     return parts.join('，');
 }

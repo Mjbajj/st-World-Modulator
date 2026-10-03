@@ -145,12 +145,14 @@ export function buildPayload(ctx, settings, endIndexExclusive = null) {
     };
 
     if (settings?.trackWardrobe === true) {
+        // 明确标注为「已有记录」，避免模型把它当成新发生的事件重发一遍
         payload.wardrobe = Object.fromEntries(
             Object.entries(chatData.wardrobe || {}).map(([name, entries]) => [
                 name,
                 Array.isArray(entries) ? entries.slice(-5) : [],
             ]),
         );
+        payload.wardrobe_note = '上面 wardrobe 是已记录的历史穿着，仅供对照，不要重复输出。只在本轮正文确有服饰变化时输出新纪录。';
     }
 
     return payload;
