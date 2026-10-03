@@ -25,3 +25,6 @@ _t.mjs
 # 本地私密配置（可能含 API Key）
 .env
 .env.local
+
+# 临时提示词草稿
+variable-update-prompt.md
