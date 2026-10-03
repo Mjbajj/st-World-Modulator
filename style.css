@@ -812,14 +812,12 @@
   flex-shrink: 0;
   margin-right: 4px;
 }
+/* 衣柜不设自己的滚动条：内容自然撑开，由 .wm-main-content 统一滚动，
+   否则展开多条详情时会出现内外两层滚动，里层的滚不到底。 */
 .wm-wardrobe-char-body {
   border-top: 1px dashed rgba(255, 255, 255, 0.08);
   padding: 2px 8px 8px;
-  max-height: 420px;
-  overflow-y: auto;
 }
-.wm-wardrobe-char-body::-webkit-scrollbar { width: 4px; }
-.wm-wardrobe-char-body::-webkit-scrollbar-thumb { background: rgba(0, 191, 255, 0.3); border-radius: 4px; }
 
 .wm-wardrobe-entry { border-bottom: 1px dashed rgba(255, 255, 255, 0.05); }
 .wm-wardrobe-entry:last-child { border-bottom: none; }
@@ -866,14 +864,8 @@
   word-break: break-word;
 }
 
-/* ====== 动作栏内联开关 ====== */
-.wm-inline-toggle {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-}
-.wm-inline-toggle-label {
-  font-size: 11px;
-  color: var(--wm-text-mute);
-  white-space: nowrap;
+/* 由外层统一滚动的列表：不设自己的高度与滚动条 */
+.wm-scroll-plain {
+  max-height: none;
+  overflow: visible;
 }

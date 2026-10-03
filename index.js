@@ -637,13 +637,6 @@ function renderWardrobe(ctx) {
     const chatData = getChatData(ctx, settings);
     const list = $('#wm-wardrobe-list');
     if (!list) return;
-
-    // 页内开关跟设置同步
-    const trackToggle = $('#wm-wardrobe-track');
-    if (trackToggle) trackToggle.checked = settings.trackWardrobe === true;
-    const injectToggle = $('#wm-wardrobe-inject');
-    if (injectToggle) injectToggle.checked = settings.injectToggles?.wardrobe === true;
-
     list.innerHTML = '';
 
     const entries = Object.entries(chatData.wardrobe || {})
@@ -1806,23 +1799,7 @@ function bindEvents(ctx) {
         renderCharacters(ctx);
     }, 150));
 
-    // 衣柜
-    $('#wm-wardrobe-track')?.addEventListener('change', (event) => {
-        const settings = getSettings(ctx);
-        settings.trackWardrobe = Boolean(event.target.checked);
-        saveSettings(ctx);
-        renderSettings(ctx);
-        toast(settings.trackWardrobe ? '已开启衣柜自动记录' : '已关闭衣柜自动记录', 'info');
-    });
-    $('#wm-wardrobe-inject')?.addEventListener('change', (event) => {
-        const settings = getSettings(ctx);
-        if (!settings.injectToggles) settings.injectToggles = {};
-        settings.injectToggles.wardrobe = Boolean(event.target.checked);
-        saveSettings(ctx);
-        applyInjection(ctx);
-        renderInject(ctx);
-        renderInjectStatus(ctx);
-    });
+    // 衣柜（开关在设置页与注入页，这里只做展示与编辑）
 
     // 注入
     $('#wm-modulator-save')?.addEventListener('click', () => {
