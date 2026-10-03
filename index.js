@@ -1024,13 +1024,26 @@ function setupOrbDrag(orb) {
                 settings.floatingPosition = { left: rect.left, top: rect.top };
                 saveSettings();
             }
-        } else {
-            togglePanel();
         }
+        // 点击开关交给 click 事件处理，这里只负责拖拽收尾
     };
+
+    // 用独立 click 判定开关：不依赖 mouseup，也避开 ST 的全局拖拽处理
+    orb.addEventListener('click', (event) => {
+        if (moved) { moved = false; return; }
+        event.preventDefault();
+        event.stopPropagation();
+        togglePanel();
+    });
 
     orb.addEventListener('mousedown', onDown);
     orb.addEventListener('touchstart', onDown, { passive: true });
+    // 触屏的 click 在拖动后仍会触发，用它兜底覆盖
+    orb.addEventListener('touchend', (event) => {
+        if (moved) { moved = false; return; }
+        event.preventDefault();
+        togglePanel();
+    });
 }
 
 function restoreOrbPosition(orb) {
@@ -1544,4 +1557,28 @@ globalThis.__worldModulator__ = {
     getDebugInfo,
     getSettings,
     getRunState,
+    /** 打开 / 收起主面板（控制台可用） */
+    toggle: () => togglePanel(),
+    open: () => openPanel(),
+    close: () => closePanel(),
+    /** 诊断：逐项报告界面与状态是否就位 */
+    diagnose() {
+        const panel = document.getElementById(PANEL_ID);
+        const orb = document.getElementById(ORB_ID);
+        const menu = document.getElementById(MENU_ITEM_ID);
+        const report = {
+            'context 可取': Boolean(getContextSafe()),
+            'uiState.ready': uiState.ready,
+            'uiState.domBound': uiState.domBound,
+            '悬浮球存在': Boolean(orb),
+            '悬浮球可见': Boolean(orb && orb.getBoundingClientRect().width > 0),
+            '悬浮球位置': orb ? { left: orb.style.left, top: orb.style.top, right: orb.style.right, bottom: orb.style.bottom } : null,
+            '面板存在': Boolean(panel),
+            '面板已打开': Boolean(panel && panel.classList.contains('wm-open')),
+            '菜单项存在': Boolean(menu),
+            '菜单容器存在': Boolean(document.getElementById('extensionsMenu')),
+        };
+        console.table(report);
+        return report;
+    },
 };
