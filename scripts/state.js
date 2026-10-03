@@ -102,6 +102,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
     lastTab: 'rules',
     /** 主面板尺寸 */
     panelSize: null,
+    /** 界面主题：'deep-space' | 'liquid-glass' */
+    theme: 'deep-space',
 
     /** ── 存储 ── */
     globalRules: {},

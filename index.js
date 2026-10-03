@@ -898,6 +898,7 @@ function renderSettings(ctx) {
     renderModelOptions(ctx);
     renderPresetOptions(ctx);
     renderSiblingList(ctx);
+    renderThemePicker(ctx);
 
     const usePreset = $('#wm-use-preset');
     if (usePreset) usePreset.checked = settings.usePreset === true;
@@ -1084,6 +1085,44 @@ function setAllPresetPrompts(ctx, enabled) {
     }
     saveSettings(ctx);
     renderPresetPrompts(ctx);
+}
+
+// ─────────────────────────────────────────────
+// 主题
+// ─────────────────────────────────────────────
+
+/** 可选主题，与 style.css 里的 :root[data-wm-theme] 对应 */
+export const THEMES = Object.freeze([
+    { key: 'deep-space', name: '深空蓝', desc: '霓虹青 · 深色玻璃' },
+    { key: 'liquid-glass', name: '液态磨砂玻璃', desc: '靛蓝 · 浅色磨砂' },
+]);
+
+const THEME_ATTR = 'data-wm-theme';
+
+/**
+ * 把主题写到 <html> 上。
+ *
+ * 选择器挂在 ':root' 而不是插件面板上，是为了让悬浮球也能跟着换肤——
+ * 悬浮球在面板之外，挂在面板上它取不到变量。
+ */
+export function applyTheme(ctx = null) {
+    const settings = getSettings(ctx);
+    const theme = THEMES.some((t) => t.key === settings?.theme) ? settings.theme : 'deep-space';
+    try {
+        document.documentElement.setAttribute(THEME_ATTR, theme);
+    } catch { /* ignore */ }
+    return theme;
+}
+
+/** 渲染主题选择卡片的高亮状态 */
+function renderThemePicker(ctx) {
+    const grid = $('#wm-theme-grid');
+    if (!grid) return;
+    const settings = getSettings(ctx);
+    const current = settings?.theme || 'deep-space';
+    $$('.wm-theme-card', grid).forEach((card) => {
+        card.classList.toggle('wm-active', card.dataset.theme === current);
+    });
 }
 
 // ─────────────────────────────────────────────
@@ -1981,6 +2020,22 @@ function bindEvents(ctx) {
         toast(mode === 'full' ? '已切换到正常版档案' : '已切换到简化版档案', 'info');
     });
 
+    // 外观：主题切换
+    document.addEventListener('click', (event) => {
+        const card = event.target?.closest?.('#wm-theme-grid .wm-theme-card');
+        if (!card) return;
+        const theme = card.dataset.theme;
+        if (!theme) return;
+        const settings = getSettings(ctx);
+        if (settings.theme === theme) return;
+        settings.theme = theme;
+        saveSettings(ctx);
+        applyTheme(ctx);
+        renderThemePicker(ctx);
+        const label = THEMES.find((t) => t.key === theme)?.name || theme;
+        toast(`已切换到「${label}」主题`, 'success');
+    });
+
     // 数据
     $('#wm-data-export')?.addEventListener('click', () => onExportData(ctx));
     $('#wm-data-clear-chat')?.addEventListener('click', () => onClearChatData(ctx));
@@ -2243,6 +2298,8 @@ export async function init() {
 
     const firstRun = !uiState.ready;
     try {
+        // 先套主题再建界面，避免首帧闪成默认皮肤
+        applyTheme(ctx);
         await ensureDom(ctx);
         uiState.ready = true;
         createMenuItem(ctx);
