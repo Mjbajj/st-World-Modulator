@@ -14,6 +14,28 @@ import { getChatData, getMergedCharacters, getMergedRules, getRetiredRuleNames, 
 /** 注入用的键前缀 */
 const KEY_BASE = `${MODULE_NAME}_inject`;
 
+/**
+ * 注入片段的固定顺序。
+ *
+ * ST 在 public/script.js 的 getExtensionPrompt() 里对 key 做 Object.keys(...).sort()，
+ * 即**按 key 名典序拼接**，而不是按写入顺序。所以必须给 key 加数字前缀来锁定顺序，
+ * 否则 modulator 会被 characters 挤到后面去。
+ */
+const SEGMENT_ORDER = Object.freeze([
+    'modulator',   // 调制器说明：必须最先，作为整体框架
+    'worldState',  // 世界状态
+    'worldRules',  // 世界规则
+    'characters',  // 角色档案
+    'wardrobe',    // 衣柜
+]);
+
+/** 生成带顺序前缀的注入 key */
+function buildKey(name) {
+    const index = SEGMENT_ORDER.indexOf(name);
+    const rank = index >= 0 ? String(index).padStart(2, '0') : '99';
+    return `${KEY_BASE}_${rank}_${name}`;
+}
+
 /** ST 注入位置常量（与 public/script.js 的 extension_prompt_types 一致） */
 export const POSITIONS = Object.freeze({
     IN_PROMPT: 0,
@@ -162,6 +184,19 @@ export function buildInjectionSegments(ctx) {
 let lastInjectedKeys = [];
 
 /**
+ * 清理旧版无序号前缀的 key。
+ * 早期版本用 `${KEY_BASE}_${name}`，升级后这些键仍留在 ST 的 extension_prompts 里，
+ * 不清掉会出现两份内容。
+ */
+function clearLegacyKeys(ctx) {
+    for (const name of SEGMENT_ORDER) {
+        try {
+            ctx.setExtensionPrompt?.(`${KEY_BASE}_${name}`, '', POSITIONS.IN_PROMPT, 0);
+        } catch { /* ignore */ }
+    }
+}
+
+/**
  * 执行注入：先清掉上一轮的键，再写入本轮内容。
  *
  * @param {object} ctx 宿主 context
@@ -178,6 +213,7 @@ export function applyInjection(ctx) {
         } catch { /* ignore */ }
     }
     lastInjectedKeys = [];
+    clearLegacyKeys(ctx);
 
     const segments = buildInjectionSegments(ctx);
     const position = settings.injectPosition === 'before_prompt' ? POSITIONS.BEFORE_PROMPT : POSITIONS.IN_PROMPT;
@@ -185,9 +221,11 @@ export function applyInjection(ctx) {
     const injected = [];
     let length = 0;
 
-    for (const [name, text] of Object.entries(segments)) {
+    // 按固定顺序写入（key 里也带序号，双保险）
+    for (const name of SEGMENT_ORDER) {
+        const text = segments[name];
         if (!text) continue;
-        const key = `${KEY_BASE}_${name}`;
+        const key = buildKey(name);
         try {
             ctx.setExtensionPrompt?.(key, text, position, depth, false, ROLES.SYSTEM);
             injected.push(name);
