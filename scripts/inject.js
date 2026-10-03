@@ -9,10 +9,32 @@
  */
 
 import { MODULE_NAME, PROFILE_MODES, getProfileFields } from './prompts.js';
-import { getChatData, getMergedCharacters, getMergedRules, getSettings } from './state.js';
+import { getChatData, getMergedCharacters, getMergedRules, getRetiredRuleNames, getSettings } from './state.js';
 
 /** 注入用的键前缀 */
 const KEY_BASE = `${MODULE_NAME}_inject`;
+
+/**
+ * 注入片段的固定顺序。
+ *
+ * ST 在 public/script.js 的 getExtensionPrompt() 里对 key 做 Object.keys(...).sort()，
+ * 即**按 key 名典序拼接**，而不是按写入顺序。所以必须给 key 加数字前缀来锁定顺序，
+ * 否则 modulator 会被 characters 挤到后面去。
+ */
+const SEGMENT_ORDER = Object.freeze([
+    'modulator',   // 调制器说明：必须最先，作为整体框架
+    'worldState',  // 世界状态
+    'worldRules',  // 世界规则
+    'characters',  // 角色档案
+    'wardrobe',    // 衣柜
+]);
+
+/** 生成带顺序前缀的注入 key */
+function buildKey(name) {
+    const index = SEGMENT_ORDER.indexOf(name);
+    const rank = index >= 0 ? String(index).padStart(2, '0') : '99';
+    return `${KEY_BASE}_${rank}_${name}`;
+}
 
 /** ST 注入位置常量（与 public/script.js 的 extension_prompt_types 一致） */
 export const POSITIONS = Object.freeze({
@@ -43,15 +65,37 @@ export function renderWorldState(chatData) {
     return `【世界状态】\n${lines.join('\n')}`;
 }
 
-/** 世界规则 → 文本。只输出启用中的规则。 */
-export function renderWorldRules(rules) {
-    const entries = Object.entries(rules || {})
-        .filter(([, rule]) => rule && rule.enabled !== false && String(rule.description || '').trim());
-    if (entries.length === 0) return '';
-    const body = entries
-        .map(([name, rule]) => `- ${name}：${rule.description}`)
-        .join('\n');
-    return `【世界规则】\n以下是本世界当前生效的规则，叙事必须严格遵守：\n${body}`;
+/**
+ * 世界规则 → 文本。
+ *
+ * 生效规则正常列出；被关闭或删除的规则要显式声明「已失效」——
+ * 否则主模型可能仍按上一轮提示词里的旧规则继续叙事。
+ * @param {object} rules 合并后的规则表
+ * @param {string[]} retiredNames 已失效规则名（来自本轮禁用/删除的记录）
+ */
+export function renderWorldRules(rules, retiredNames = []) {
+    const entries = Object.entries(rules || {});
+    const active = entries.filter(([, rule]) => (
+        rule && rule.enabled !== false && String(rule.description || '').trim()
+    ));
+    const disabled = entries.filter(([, rule]) => rule && rule.enabled === false);
+
+    // 合并显式失效名单与当前处于禁用状态的规则，去重
+    const retired = [...new Set([
+        ...(Array.isArray(retiredNames) ? retiredNames : []),
+        ...disabled.map(([name]) => name),
+    ])].filter((name) => name && !active.some(([n]) => n === name));
+
+    const blocks = [];
+    if (active.length > 0) {
+        const body = active.map(([name, rule]) => `- ${name}：${rule.description}`).join('\n');
+        blocks.push(`【世界规则】\n以下是本世界当前生效的规则，叙事必须严格遵守：\n${body}`);
+    }
+    if (retired.length > 0) {
+        const body = retired.map((name) => `- ${name}`).join('\n');
+        blocks.push(`【已失效规则】\n以下规则已被废除，**不再生效**。叙事中不得再依据这些规则行事，也不得让角色表现出受其约束的迹象：\n${body}`);
+    }
+    return blocks.join('\n\n');
 }
 
 /** 角色档案 → 文本 */
@@ -92,7 +136,9 @@ export function renderWardrobe(chatData, perCharacterLimit = 5) {
         blocks.push(`◆ ${name}\n${lines.join('\n')}`);
     }
     if (blocks.length === 0) return '';
-    return `【角色衣柜·历史穿着】\n${blocks.join('\n\n')}`;
+    return `【角色衣柜·历史穿着】
+历史穿着为角色拥有的衣物，可自行按需切换组合已有角色衣物。
+${blocks.join('\n\n')}`;
 }
 
 /**
@@ -116,7 +162,10 @@ export function buildInjectionSegments(ctx) {
         if (text) segments.worldState = text;
     }
     if (toggles.worldRules) {
-        const text = renderWorldRules(getMergedRules(ctx, settings));
+        const text = renderWorldRules(
+            getMergedRules(ctx, settings),
+            getRetiredRuleNames(ctx, settings),
+        );
         if (text) segments.worldRules = text;
     }
     if (toggles.characters) {
@@ -137,6 +186,19 @@ export function buildInjectionSegments(ctx) {
 let lastInjectedKeys = [];
 
 /**
+ * 清理旧版无序号前缀的 key。
+ * 早期版本用 `${KEY_BASE}_${name}`，升级后这些键仍留在 ST 的 extension_prompts 里，
+ * 不清掉会出现两份内容。
+ */
+function clearLegacyKeys(ctx) {
+    for (const name of SEGMENT_ORDER) {
+        try {
+            ctx.setExtensionPrompt?.(`${KEY_BASE}_${name}`, '', POSITIONS.IN_PROMPT, 0);
+        } catch { /* ignore */ }
+    }
+}
+
+/**
  * 执行注入：先清掉上一轮的键，再写入本轮内容。
  *
  * @param {object} ctx 宿主 context
@@ -153,6 +215,7 @@ export function applyInjection(ctx) {
         } catch { /* ignore */ }
     }
     lastInjectedKeys = [];
+    clearLegacyKeys(ctx);
 
     const segments = buildInjectionSegments(ctx);
     const position = settings.injectPosition === 'before_prompt' ? POSITIONS.BEFORE_PROMPT : POSITIONS.IN_PROMPT;
@@ -160,9 +223,11 @@ export function applyInjection(ctx) {
     const injected = [];
     let length = 0;
 
-    for (const [name, text] of Object.entries(segments)) {
+    // 按固定顺序写入（key 里也带序号，双保险）
+    for (const name of SEGMENT_ORDER) {
+        const text = segments[name];
         if (!text) continue;
-        const key = `${KEY_BASE}_${name}`;
+        const key = buildKey(name);
         try {
             ctx.setExtensionPrompt?.(key, text, position, depth, false, ROLES.SYSTEM);
             injected.push(name);

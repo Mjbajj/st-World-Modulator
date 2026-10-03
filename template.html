@@ -87,13 +87,40 @@
 
     <!-- 规则 -->
     <div class="wm-tab-panel" data-panel="rules">
+      <div class="wm-file-group">
+        <div class="wm-file-group-title">规则待办（先攒着，再决定怎么用）</div>
+        <div class="wm-notice wm-info" style="margin-bottom:10px">
+          这里写的是「大概想加什么规则」。攒好后有两种用法：<b>插入输入框</b>——送进酒馆输入栏，你可以接着编辑再发送；<b>直接补充</b>——不进输入框，直接交给分析模型整理成正式规则并写回下方规则表。
+        </div>
+        <textarea class="wm-textarea" id="wm-draft-input" rows="3" placeholder="例如：进入夜晚后所有人欲望增强&#10;例如：主角有轻微的受虐倾向"></textarea>
+        <div class="wm-action-bar" style="margin:10px 0 0;border:none;padding:0">
+          <button class="wm-btn" id="wm-draft-add">＋ 加入待办</button>
+        </div>
+        <div class="wm-scroll-list wm-draft-list" id="wm-draft-list"></div>
+        <div class="wm-action-bar" style="margin:10px 0 0;border:none;padding:0">
+          <button class="wm-btn wm-btn-green" id="wm-draft-to-input">插入输入框</button>
+          <button class="wm-btn wm-btn-action" id="wm-draft-to-ai">直接补充规则</button>
+          <button class="wm-btn wm-btn-danger" id="wm-draft-clear">清空待办</button>
+        </div>
+        <div class="wm-item-desc" id="wm-draft-status" style="margin-top:8px">—</div>
+      </div>
+
+      <div class="wm-divider"></div>
+
       <div class="wm-action-bar">
-        <button class="wm-btn" id="wm-rule-add">＋ 新增规则</button>
+        <button class="wm-btn" id="wm-rule-add">＋ 直接新增规则（立即生效）</button>
       </div>
       <div class="wm-input-group">
         <input class="wm-input" id="wm-rule-search" placeholder="搜索规则…">
       </div>
       <div class="wm-scroll-list" id="wm-rule-list"></div>
+      <div class="wm-file-group" id="wm-retired-group" style="display:none">
+        <div class="wm-file-group-title">已失效规则（会告知主模型不再生效）</div>
+        <div id="wm-retired-list"></div>
+        <div class="wm-action-bar" style="margin:10px 0 0;border:none;padding:0">
+          <button class="wm-btn" id="wm-retired-clear">清空失效记录</button>
+        </div>
+      </div>
     </div>
 
     <!-- 推荐规则 -->
@@ -108,6 +135,13 @@
     <div class="wm-tab-panel" data-panel="characters">
       <div class="wm-action-bar">
         <button class="wm-btn" id="wm-char-add">＋ 新增角色</button>
+        <div class="wm-profile-mode-inline">
+          <span class="wm-profile-mode-label">档案版本</span>
+          <div class="wm-scope-group" id="wm-profile-mode">
+            <button class="wm-scope-btn" data-mode="simple">简化版</button>
+            <button class="wm-scope-btn" data-mode="full">正常版</button>
+          </div>
+        </div>
       </div>
       <div class="wm-input-group">
         <input class="wm-input" id="wm-char-search" placeholder="搜索角色…">
@@ -118,9 +152,10 @@
     <!-- 衣柜 -->
     <div class="wm-tab-panel" data-panel="wardrobe">
       <div class="wm-notice wm-info">
-        衣柜记录角色全部历史穿着。需在「设置 → 追踪项目」中开启衣柜追踪后才会自动记录。
+        点角色名展开该角色的全部穿着记录，再点单条记录看详细描述。每条都可编辑或删除。
+        自动记录开关在「设置 → 追踪项目」，是否注入在「注入」页。
       </div>
-      <div class="wm-scroll-list" id="wm-wardrobe-list"></div>
+      <div class="wm-scroll-list wm-scroll-plain" id="wm-wardrobe-list"></div>
     </div>
 
     <!-- 注入 -->
@@ -255,17 +290,6 @@
       </div>
 
       <div class="wm-file-group">
-        <div class="wm-file-group-title">档案版本</div>
-        <div class="wm-scope-group" id="wm-profile-mode">
-          <button class="wm-scope-btn" data-mode="simple">简化版</button>
-          <button class="wm-scope-btn" data-mode="full">正常版</button>
-        </div>
-        <div class="wm-item-desc" style="margin-top:10px">
-          切换版本只影响显示与提示词字段；已有档案中不在新版本的字段会保留但不显示。
-        </div>
-      </div>
-
-      <div class="wm-file-group">
         <div class="wm-file-group-title">触发设置</div>
         <div class="wm-field-row">
           <span class="wm-field-label">轮询间隔</span>
@@ -282,11 +306,44 @@
       </div>
 
       <div class="wm-file-group">
+        <div class="wm-file-group-title">跨卡搬运</div>
+        <div class="wm-item-desc" style="margin-bottom:10px">
+          这里列出你其他角色卡里创建过的规则、角色与衣柜。展开后点任意条目，即可复制到当前卡生效。
+        </div>
+        <div class="wm-action-bar" style="margin:0 0 10px;border:none;padding:0">
+          <button class="wm-btn" id="wm-sibling-refresh">刷新列表</button>
+        </div>
+        <div id="wm-sibling-list"></div>
+      </div>
+
+      <div class="wm-file-group">
+        <div class="wm-file-group-title">外观</div>
+        <div class="wm-theme-grid" id="wm-theme-grid">
+          <button class="wm-theme-card" data-theme="deep-space" type="button">
+            <span class="wm-theme-swatch wm-theme-swatch--space">
+              <i></i><i></i><i></i>
+            </span>
+            <span class="wm-theme-name">深空蓝</span>
+            <span class="wm-theme-desc">霓虹青 · 深色玻璃</span>
+          </button>
+          <button class="wm-theme-card" data-theme="liquid-glass" type="button">
+            <span class="wm-theme-swatch wm-theme-swatch--glass">
+              <i></i><i></i><i></i>
+            </span>
+            <span class="wm-theme-name">液态磨砂玻璃</span>
+            <span class="wm-theme-desc">靛蓝 · 浅色磨砂</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="wm-file-group">
         <div class="wm-file-group-title">数据</div>
         <div class="wm-action-bar" style="margin:0;border:none;padding:0">
           <button class="wm-btn" id="wm-data-export">导出全部数据</button>
+          <button class="wm-btn" id="wm-data-import">导入数据</button>
           <button class="wm-btn wm-btn-danger" id="wm-data-clear-chat">清空本聊天数据</button>
         </div>
+        <input type="file" id="wm-data-import-file" accept="application/json,.json" style="display:none">
       </div>
     </div>
 

@@ -102,6 +102,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
     lastTab: 'rules',
     /** 主面板尺寸 */
     panelSize: null,
+    /** 界面主题：'deep-space' | 'liquid-glass' */
+    theme: 'deep-space',
 
     /** ── 存储 ── */
     globalRules: {},
@@ -119,9 +121,13 @@ export function createEmptyChatData() {
             当前天气: '',
         },
         rules: {},
+        /** 已失效规则名 → 失效原因；注入时要显式告知主模型这些规则不再生效 */
+        retiredRules: {},
         recommendedRules: {},
         characters: {},
         wardrobe: {},
+        /** 跨卡搬运用的规则待办草稿 [{ id, text, createdAt }] */
+        ruleDrafts: [],
         meta: {
             lastProcessedSignature: '',
             lastRunAt: 0,
@@ -402,6 +408,11 @@ export function setRule(ctx, name, description, scope = SCOPES.LOCAL, settings =
     } else {
         getChatData(ctx, s).rules[name] = entry;
     }
+    // 重新写入同名规则视为重新生效，清掉旧的失效记录
+    const data = getChatData(ctx, s);
+    if (data.retiredRules && Object.hasOwn(data.retiredRules, name)) {
+        delete data.retiredRules[name];
+    }
     saveSettings(ctx);
 }
 
@@ -419,8 +430,240 @@ export function removeRule(ctx, name, settings = null) {
         delete data.rules[name];
         removed = true;
     }
-    if (removed) saveSettings(ctx);
+    // 记下失效规则，注入时要显式告知主模型它已不再生效
+    if (removed) {
+        if (!data.retiredRules || typeof data.retiredRules !== 'object') data.retiredRules = {};
+        data.retiredRules[name] = { since: Date.now() };
+        saveSettings(ctx);
+    }
     return removed;
+}
+
+/** 规则是否处于失效状态 */
+export function isRuleRetired(ctx, name, settings = null) {
+    const s = settings || getSettings(ctx);
+    const data = getChatData(ctx, s);
+    return Object.hasOwn(data.retiredRules || {}, name);
+}
+
+/** 取失效规则名列表 */
+export function getRetiredRuleNames(ctx, settings = null) {
+    const s = settings || getSettings(ctx);
+    const data = getChatData(ctx, s);
+    return Object.keys(data.retiredRules || {});
+}
+
+/** 让某条规则重新生效（从失效名单里移除） */
+export function reviveRule(ctx, name, settings = null) {
+    const s = settings || getSettings(ctx);
+    if (!s || !name) return false;
+    const data = getChatData(ctx, s);
+    if (!data.retiredRules || !Object.hasOwn(data.retiredRules, name)) return false;
+    delete data.retiredRules[name];
+    saveSettings(ctx);
+    return true;
+}
+
+/** 清空失效规则记录 */
+export function clearRetiredRules(ctx, settings = null) {
+    const s = settings || getSettings(ctx);
+    const data = getChatData(ctx, s);
+    data.retiredRules = {};
+    saveSettings(ctx);
+}
+
+// ─────────────────────────────────────────────
+// 规则待办草稿（先攒着，再一键送进输入框或交给 AI 补充）
+// ─────────────────────────────────────────────
+
+/** 取规则草稿列表 */
+export function getRuleDrafts(ctx, settings = null) {
+    const s = settings || getSettings(ctx);
+    const data = getChatData(ctx, s);
+    return Array.isArray(data.ruleDrafts) ? data.ruleDrafts : [];
+}
+
+/** 新增一条规则草稿 */
+export function addRuleDraft(ctx, text, settings = null) {
+    const s = settings || getSettings(ctx);
+    const trimmed = String(text || '').trim();
+    if (!trimmed) return null;
+    const data = getChatData(ctx, s);
+    if (!Array.isArray(data.ruleDrafts)) data.ruleDrafts = [];
+    const draft = {
+        id: `d${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
+        text: trimmed,
+        createdAt: Date.now(),
+    };
+    data.ruleDrafts.push(draft);
+    saveSettings(ctx);
+    return draft;
+}
+
+/** 修改一条规则草稿 */
+export function updateRuleDraft(ctx, id, text, settings = null) {
+    const s = settings || getSettings(ctx);
+    const trimmed = String(text || '').trim();
+    if (!trimmed) return false;
+    const data = getChatData(ctx, s);
+    const list = Array.isArray(data.ruleDrafts) ? data.ruleDrafts : [];
+    const target = list.find((d) => d.id === id);
+    if (!target) return false;
+    target.text = trimmed;
+    target.updatedAt = Date.now();
+    saveSettings(ctx);
+    return true;
+}
+
+/** 删除一条规则草稿 */
+export function removeRuleDraft(ctx, id, settings = null) {
+    const s = settings || getSettings(ctx);
+    const data = getChatData(ctx, s);
+    const list = Array.isArray(data.ruleDrafts) ? data.ruleDrafts : [];
+    const next = list.filter((d) => d.id !== id);
+    if (next.length === list.length) return false;
+    data.ruleDrafts = next;
+    saveSettings(ctx);
+    return true;
+}
+
+/** 清空全部规则草稿 */
+export function clearRuleDrafts(ctx, settings = null) {
+    const s = settings || getSettings(ctx);
+    const data = getChatData(ctx, s);
+    data.ruleDrafts = [];
+    saveSettings(ctx);
+}
+
+/** 把草稿拼成一段可直接插入输入框的文本 */
+export function formatRuleDrafts(ctx, settings = null) {
+    const drafts = getRuleDrafts(ctx, settings);
+    if (drafts.length === 0) return '';
+    const body = drafts.map((d) => `- ${d.text}`).join('\n');
+    return `请把以下要求整理成世界规则并逐条添加：\n${body}`;
+}
+
+// ─────────────────────────────────────────────
+// 跨角色卡搬运
+// ─────────────────────────────────────────────
+
+/**
+ * 列出其他聊天（角色卡）里存过数据的条目。
+ *
+ * 返回结构：
+ *   [{ chatKey, rules: {name: rule}, characters: {name: entry}, wardrobe: {name: [...]} }, ...]
+ * 不含当前聊天。空聊天会被过滤掉。
+ */
+export function listSiblingChatData(ctx = null, settings = null) {
+    const context = ctx || getContextSafe();
+    const s = settings || getSettings(context);
+    if (!s || !s.chatData || typeof s.chatData !== 'object') return [];
+    const currentKey = getChatKey(context);
+    const out = [];
+    for (const [chatKey, data] of Object.entries(s.chatData)) {
+        if (chatKey === currentKey) continue;
+        if (!data || typeof data !== 'object') continue;
+        const rules = (data.rules && typeof data.rules === 'object') ? data.rules : {};
+        const characters = (data.characters && typeof data.characters === 'object') ? data.characters : {};
+        const wardrobe = (data.wardrobe && typeof data.wardrobe === 'object') ? data.wardrobe : {};
+        const ruleCount = Object.keys(rules).length;
+        const charCount = Object.keys(characters).length;
+        const wardrobeCount = Object.keys(wardrobe).length;
+        if (ruleCount + charCount + wardrobeCount === 0) continue;
+        out.push({
+            chatKey,
+            lastRunAt: Number(data.meta?.lastRunAt) || 0,
+            rules,
+            characters,
+            wardrobe,
+            ruleCount,
+            charCount,
+            wardrobeCount,
+        });
+    }
+    return out.sort((a, b) => b.lastRunAt - a.lastRunAt);
+}
+
+/** 把别处的规则复制到当前卡 */
+export function copyRuleToCurrentChat(ctx, sourceChatKey, name, settings = null) {
+    const s = settings || getSettings(ctx);
+    const source = s.chatData?.[sourceChatKey]?.rules?.[name];
+    if (!source) return false;
+    const data = getChatData(ctx, s);
+    data.rules[name] = { ...source, updatedAt: Date.now(), copiedFrom: sourceChatKey };
+    if (data.retiredRules && Object.hasOwn(data.retiredRules, name)) delete data.retiredRules[name];
+    saveSettings(ctx);
+    return true;
+}
+
+/** 把别处的角色档案复制到当前卡 */
+export function copyCharacterToCurrentChat(ctx, sourceChatKey, name, settings = null) {
+    const s = settings || getSettings(ctx);
+    const source = s.chatData?.[sourceChatKey]?.characters?.[name];
+    if (!source) return false;
+    const data = getChatData(ctx, s);
+    data.characters[name] = {
+        ...source,
+        profile: { ...(source.profile || {}) },
+        scope: SCOPES.LOCAL,
+        copiedFrom: sourceChatKey,
+    };
+    saveSettings(ctx);
+    return true;
+}
+
+/** 把别处的衣柜记录复制到当前卡（追加，不覆盖已有） */
+export function copyWardrobeToCurrentChat(ctx, sourceChatKey, name, settings = null) {
+    const s = settings || getSettings(ctx);
+    const source = s.chatData?.[sourceChatKey]?.wardrobe?.[name];
+    if (!Array.isArray(source) || source.length === 0) return false;
+    const data = getChatData(ctx, s);
+    if (!data.wardrobe[name] || !Array.isArray(data.wardrobe[name])) data.wardrobe[name] = [];
+    data.wardrobe[name].push(...source.map((entry) => ({ ...entry, copiedFrom: sourceChatKey })));
+    saveSettings(ctx);
+    return true;
+}
+
+/** 把某条本地规则/角色提升为全局（跨卡可用） */
+export function promoteToGlobal(ctx, kind, name, settings = null) {
+    const s = settings || getSettings(ctx);
+    const data = getChatData(ctx, s);
+    if (kind === 'rule') {
+        const rule = data.rules?.[name];
+        if (!rule) return false;
+        s.globalRules[name] = { ...rule, scope: SCOPES.GLOBAL };
+        delete data.rules[name];
+    } else if (kind === 'character') {
+        const character = data.characters?.[name];
+        if (!character) return false;
+        s.globalCharacters[name] = { ...character, scope: SCOPES.GLOBAL };
+        delete data.characters[name];
+    } else {
+        return false;
+    }
+    saveSettings(ctx);
+    return true;
+}
+
+/** 把全局条目收回当前卡 */
+export function demoteToLocal(ctx, kind, name, settings = null) {
+    const s = settings || getSettings(ctx);
+    const data = getChatData(ctx, s);
+    if (kind === 'rule') {
+        const rule = s.globalRules?.[name];
+        if (!rule) return false;
+        data.rules[name] = { ...rule, scope: SCOPES.LOCAL };
+        delete s.globalRules[name];
+    } else if (kind === 'character') {
+        const character = s.globalCharacters?.[name];
+        if (!character) return false;
+        data.characters[name] = { ...character, scope: SCOPES.LOCAL };
+        delete s.globalCharacters[name];
+    } else {
+        return false;
+    }
+    saveSettings(ctx);
+    return true;
 }
 
 /** 写入角色档案（按字段合并，只覆盖提供的字段） */
@@ -472,6 +715,58 @@ export function appendWardrobeEntry(ctx, name, entry, settings = null) {
         at: Date.now(),
     });
     saveSettings(ctx);
+}
+
+/** 取某角色的全部衣柜记录 */
+export function getWardrobeEntries(ctx, name, settings = null) {
+    const s = settings || getSettings(ctx);
+    const data = getChatData(ctx, s);
+    const list = data.wardrobe?.[name];
+    return Array.isArray(list) ? list : [];
+}
+
+/** 按索引更新一条衣柜记录 */
+export function updateWardrobeEntry(ctx, name, index, patch, settings = null) {
+    const s = settings || getSettings(ctx);
+    const data = getChatData(ctx, s);
+    const list = data.wardrobe?.[name];
+    if (!Array.isArray(list) || index < 0 || index >= list.length) return false;
+    const entry = list[index];
+    if (patch.time !== undefined) entry.time = String(patch.time || '');
+    if (patch.scene !== undefined) entry.scene = String(patch.scene || '');
+    if (patch.outfit !== undefined) entry.outfit = String(patch.outfit || '');
+    entry.editedAt = Date.now();
+    saveSettings(ctx);
+    return true;
+}
+
+/** 按索引删除一条衣柜记录 */
+export function removeWardrobeEntry(ctx, name, index, settings = null) {
+    const s = settings || getSettings(ctx);
+    const data = getChatData(ctx, s);
+    const list = data.wardrobe?.[name];
+    if (!Array.isArray(list) || index < 0 || index >= list.length) return false;
+    list.splice(index, 1);
+    if (list.length === 0) delete data.wardrobe[name];
+    saveSettings(ctx);
+    return true;
+}
+
+/** 手动新增一条衣柜记录 */
+export function addWardrobeEntry(ctx, name, entry, settings = null) {
+    const s = settings || getSettings(ctx);
+    if (!s || !name) return false;
+    const data = getChatData(ctx, s);
+    if (!Array.isArray(data.wardrobe[name])) data.wardrobe[name] = [];
+    data.wardrobe[name].push({
+        time: String(entry?.time || data.worldState.当前时间 || ''),
+        scene: String(entry?.scene || ''),
+        outfit: String(entry?.outfit || ''),
+        at: Date.now(),
+        manual: true,
+    });
+    saveSettings(ctx);
+    return true;
 }
 
 // ─────────────────────────────────────────────
