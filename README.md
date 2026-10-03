@@ -167,6 +167,43 @@ scripts/
 
 ---
 
+## 鸣谢
+
+本插件的实现思路、架构设计与部分代码参考了以下项目，在此致谢。
+
+### BS BioTracker
+
+- **作者**：[Liuuuu54](https://github.com/Liuuuu54)
+- **仓库**：https://github.com/Liuuuu54/st_bs_biotracker
+- **许可**：Apache License 2.0
+
+本插件在以下方面借鉴了该项目：
+
+| 借鉴内容 | 说明 |
+|---|---|
+| 整体架构 | 独立分析模型 + 轮询驱动的状态追踪管道 |
+| 稳定判定 | 用内容签名连续稳定一段时间作为「正文输出完成」的判据，避开流式输出的半成品问题 |
+| 连接配置组 | 可保存多套 API 配置随时切换的设计 |
+| 预设条目开关 | 逐条启用/禁用所选预设内提示词的做法 |
+| 衣柜系统 | 历史穿着的记录与折叠展示形式 |
+| 设置自动保存 | 表单改动即持久化，而非依赖显式保存按钮 |
+| JSON 纠错重问 | 模型返回非法 JSON 时的追问策略 |
+| 传输降级 | 宿主代理失败后改用直连的兜底逻辑 |
+| 界面风格 | 悬浮球 + 可拖动面板 + 魔杖菜单入口的交互形态 |
+
+项目的部分代码逻辑与提示词组织方式源自该项目，按照 Apache License 2.0 的要求，原项目的版权与许可声明见 [LICENSE-BS-BioTracker](LICENSE-BS-BioTracker)。
+
+### SillyTavern
+
+- **仓库**：https://github.com/SillyTavern/SillyTavern
+- **许可**：AGPL-3.0
+
+本插件是基于 SillyTavern 扩展接口开发的第三方扩展，调用了其 `getContext()`、`setExtensionPrompt()`、`getPresetManager()` 等公开接口。
+
+---
+
 ## 许可
 
-见 [LICENSE](LICENSE)。
+本项目采用 MIT License，见 [LICENSE](LICENSE)。
+
+第三方组件的许可声明见 [LICENSE-BS-BioTracker](LICENSE-BS-BioTracker)。
