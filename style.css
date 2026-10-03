@@ -88,15 +88,19 @@
   --wm-highlight: none;
   --wm-opt-bg: #0f172a;
   --wm-status-text: #fff;
+  --wm-edge-blur: 0px;
+  --wm-edge-mask: none;
+  --wm-edge-opacity: 0;
+  --wm-edge-inset: 0px;
 }
 
 /* ====== 主题 B：液态磨砂玻璃 ====== */
 :root[data-wm-theme="liquid-glass"] {
-  /* 底色：冷灰白玻璃，透出背后的内容 */
-  --wm-bg-deep: rgba(228, 236, 245, 0.55);
-  --wm-bg-mid: rgba(242, 246, 252, 0.42);
-  --wm-line: rgba(255, 255, 255, 0.65);
-  --wm-line-soft: rgba(255, 255, 255, 0.4);
+  /* 底色：实心冷灰白，完全不透底，保证文字清晰 */
+  --wm-bg-deep: #eef3fa;
+  --wm-bg-mid: #e4ecf7;
+  --wm-line: rgba(255, 255, 255, 0.9);
+  --wm-line-soft: rgba(160, 185, 215, 0.35);
 
   /* 强调色：靛蓝 → 青，柔和化 */
   --wm-cyan: #2f7df6;
@@ -156,42 +160,58 @@
   --wm-shadow-deep: rgba(90, 115, 145, 0.35);
 
   /* 玻璃参数：更强的模糊、更圆的角、高饱和 */
-  --wm-blur-panel: 30px;
-  --wm-blur-orb: 24px;
+  --wm-blur-panel: 14px;
+  --wm-blur-orb: 10px;
   --wm-border-width: 1.5px;
   --wm-panel-radius: 24px;
   --wm-orb-radius: 42%;
   --wm-saturate: 180%;
 
-  --wm-panel-bg: linear-gradient(
-    135deg,
-    rgba(255, 255, 255, 0.62) 0%,
-    rgba(238, 245, 255, 0.42) 45%,
-    rgba(222, 236, 252, 0.5) 100%
-  );
-  --wm-orb-bg: linear-gradient(
-    145deg,
-    rgba(255, 255, 255, 0.75) 0%,
-    rgba(214, 232, 255, 0.5) 55%,
-    rgba(190, 216, 248, 0.6) 100%
-  );
+  --wm-panel-bg:
+    /* 顶部一层极淡的透光，制造玻璃顶面 */
+    linear-gradient(180deg, rgba(255, 255, 255, 0.55) 0px, rgba(255, 255, 255, 0) 80px),
+    /* 实心磨砂主体：中心最实，靠边 18px 内轻微透明，露出背后的模糊 */
+    radial-gradient(
+      130% 120% at 50% 45%,
+      #f3f7fd 0%,
+      #e9f0fa 62%,
+      rgba(226, 237, 250, 0.82) 96%,
+      rgba(222, 234, 249, 0.7) 100%
+    );
+  --wm-orb-bg:
+    radial-gradient(100% 100% at 32% 25%, #ffffff 0%, #eaf1fb 45%, #cfdef2 100%);
   --wm-panel-shadow:
-    0 18px 60px rgba(90, 115, 145, 0.32),
-    0 2px 8px rgba(90, 115, 145, 0.18),
-    inset 0 1px 0 rgba(255, 255, 255, 0.85),
-    inset 0 -1px 0 rgba(255, 255, 255, 0.35);
+    /* 外部投影：让面板从背景里浮起来 */
+    0 24px 64px rgba(96, 122, 156, 0.28),
+    0 3px 10px rgba(96, 122, 156, 0.14),
+    /* 内侧亮边：模拟玻璃边缘的厚度与折射 */
+    inset 0 0 0 1px rgba(255, 255, 255, 0.7),
+    inset 0 2px 3px rgba(255, 255, 255, 0.95),
+    inset 0 -3px 8px rgba(255, 255, 255, 0.55),
+    inset 0 0 40px rgba(255, 255, 255, 0.35),
+    /* 底部内侧的轻微冷色，做出玻璃的厚度感 */
+    inset 0 -1px 2px rgba(150, 178, 210, 0.4);
   --wm-orb-shadow:
-    0 8px 26px rgba(90, 115, 145, 0.35),
-    inset 0 1px 0 rgba(255, 255, 255, 0.9),
-    inset 0 -2px 6px rgba(255, 255, 255, 0.4);
+    0 10px 28px rgba(96, 122, 156, 0.3),
+    0 2px 6px rgba(96, 122, 156, 0.16),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.75),
+    inset 3px 4px 8px rgba(255, 255, 255, 1),
+    inset -4px -5px 12px rgba(170, 196, 226, 0.5);
   /* 顶部高光条：玻璃顶面的反光 */
   --wm-highlight: linear-gradient(
     180deg,
-    rgba(255, 255, 255, 0.75) 0%,
-    rgba(255, 255, 255, 0) 42%
+    rgba(255, 255, 255, 0.85) 0px,
+    rgba(255, 255, 255, 0.35) 1px,
+    rgba(255, 255, 255, 0) 3px
   );
   --wm-opt-bg: #f4f8fe;
   --wm-status-text: #16283d;
+  /* 边缘透光：只让最外 14px 有背景模糊 */
+  --wm-edge-blur: 18px;
+  --wm-edge-opacity: 1;
+  --wm-edge-mask: -webkit-linear-gradient(#000 0 0) content-box, -webkit-linear-gradient(#000 0 0);
+  --wm-edge-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  --wm-edge-inset: 14px;
 }
 
 
@@ -286,8 +306,26 @@
   border-radius: inherit;
   z-index: 0;
 }
-#wm-panel > * { position: relative; z-index: 1; }
+/* 边缘透光：只在边框内侧一圈做背景模糊，中心保持实心不糊字。
+   用 mask 挖空中心，让 backdrop-filter 只作用于边缘。 */
+#wm-panel::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  z-index: 0;
+  backdrop-filter: blur(var(--wm-edge-blur, 0px));
+  -webkit-backdrop-filter: blur(var(--wm-edge-blur, 0px));
+  /* 两层 mask 相减，只保留边框内侧那圈，中心被挖空 */
+  -webkit-mask-image: var(--wm-edge-mask, none);
+  mask-image: var(--wm-edge-mask, none);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  padding: var(--wm-edge-inset, 0);
+  opacity: var(--wm-edge-opacity, 0);
 }
+#wm-panel > * { position: relative; z-index: 1; }
 #wm-panel.wm-open { display: flex; }
 
 #wm-panel * { box-sizing: border-box; }
