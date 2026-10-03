@@ -1,0 +1,245 @@
+<!-- World Modulator —— 主面板结构（由 index.js 注入到页面） -->
+
+<div id="wm-floating-orb" title="World Modulator（拖动可移动，点击打开）">
+  <svg viewBox="0 0 24 24" aria-hidden="true">
+    <circle cx="12" cy="12" r="9"></circle>
+    <ellipse cx="12" cy="12" rx="9" ry="3.6"></ellipse>
+    <ellipse cx="12" cy="12" rx="3.6" ry="9"></ellipse>
+  </svg>
+</div>
+
+<div id="wm-panel">
+  <!-- 顶部状态区（可拖动） -->
+  <div class="wm-status-header wm-drag-handle">
+    <div class="wm-status-group">
+      <div class="wm-status-item">
+        <svg class="wm-svg-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+        <span class="wm-status-value" id="wm-status-time">—</span>
+      </div>
+      <div class="wm-status-item">
+        <svg class="wm-svg-icon" viewBox="0 0 24 24"><path d="M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>
+        <span class="wm-status-value" id="wm-status-place">—</span>
+      </div>
+      <div class="wm-status-item">
+        <svg class="wm-svg-icon" viewBox="0 0 24 24"><path d="M6 14a4 4 0 0 1 1-7.9 5 5 0 0 1 9.6 1.2A3.5 3.5 0 0 1 17 14z"/></svg>
+        <span class="wm-status-value" id="wm-status-weather">—</span>
+      </div>
+    </div>
+    <div class="wm-header-actions">
+      <div class="wm-mode-switch-wrapper">
+        <span class="wm-mode-label" id="wm-status-analyze">分析</span>
+        <label class="wm-toggle-switch" title="自动分析开关">
+          <input type="checkbox" id="wm-toggle-enabled">
+          <span class="wm-slider"></span>
+        </label>
+      </div>
+      <button class="wm-btn-icon wm-no-spin" id="wm-btn-minimize" title="收起为悬浮球">
+        <svg class="wm-svg-icon" viewBox="0 0 24 24" style="width:13px;height:13px;margin:0"><path d="M5 12h14"/></svg>
+      </button>
+      <button class="wm-btn-icon wm-no-spin" id="wm-btn-close" title="关闭（保留悬浮球）">
+        <svg class="wm-svg-icon" viewBox="0 0 24 24" style="width:13px;height:13px;margin:0"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- 全局操作区 -->
+  <div class="wm-global-actions">
+    <button class="wm-btn wm-btn-action" id="wm-btn-analyze">
+      <svg class="wm-svg-icon" viewBox="0 0 24 24"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/></svg>
+      立即分析
+    </button>
+    <button class="wm-btn wm-btn-green" id="wm-btn-inject">
+      <svg class="wm-svg-icon" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+      立即注入
+    </button>
+    <button class="wm-btn" id="wm-btn-refresh">
+      <svg class="wm-svg-icon" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/></svg>
+      刷新
+    </button>
+  </div>
+
+  <!-- 标签页 -->
+  <div class="wm-tabs-nav">
+    <div class="wm-tab-btn" data-tab="world">世界状态</div>
+    <div class="wm-tab-btn" data-tab="rules">规则</div>
+    <div class="wm-tab-btn" data-tab="recommend">推荐 <span class="wm-badge" id="wm-badge-recommend" style="display:none">0</span></div>
+    <div class="wm-tab-btn" data-tab="characters">角色</div>
+    <div class="wm-tab-btn" data-tab="wardrobe">衣柜</div>
+    <div class="wm-tab-btn" data-tab="inject">注入</div>
+    <div class="wm-tab-btn" data-tab="settings">设置</div>
+  </div>
+
+  <!-- 内容区 -->
+  <div class="wm-main-content">
+
+    <!-- 世界状态 -->
+    <div class="wm-tab-panel" data-panel="world">
+      <div class="wm-action-bar">
+        <button class="wm-btn" id="wm-world-save">保存</button>
+      </div>
+      <div class="wm-world-grid" id="wm-world-grid"></div>
+      <div class="wm-divider"></div>
+      <div class="wm-file-group">
+        <div class="wm-file-group-title">最近变动</div>
+        <div id="wm-world-summary" class="wm-item-desc">—</div>
+      </div>
+    </div>
+
+    <!-- 规则 -->
+    <div class="wm-tab-panel" data-panel="rules">
+      <div class="wm-action-bar">
+        <button class="wm-btn" id="wm-rule-add">＋ 新增规则</button>
+      </div>
+      <div class="wm-input-group">
+        <input class="wm-input" id="wm-rule-search" placeholder="搜索规则…">
+      </div>
+      <div class="wm-scroll-list" id="wm-rule-list"></div>
+    </div>
+
+    <!-- 推荐规则 -->
+    <div class="wm-tab-panel" data-panel="recommend">
+      <div class="wm-notice wm-info">
+        推荐规则由分析模型根据当前剧情生成，每轮刷新。点击「采纳」将其加入你的规则库。
+      </div>
+      <div class="wm-scroll-list" id="wm-recommend-list"></div>
+    </div>
+
+    <!-- 角色 -->
+    <div class="wm-tab-panel" data-panel="characters">
+      <div class="wm-action-bar">
+        <button class="wm-btn" id="wm-char-add">＋ 新增角色</button>
+      </div>
+      <div class="wm-input-group">
+        <input class="wm-input" id="wm-char-search" placeholder="搜索角色…">
+      </div>
+      <div id="wm-char-list"></div>
+    </div>
+
+    <!-- 衣柜 -->
+    <div class="wm-tab-panel" data-panel="wardrobe">
+      <div class="wm-notice wm-info">
+        衣柜记录角色全部历史穿着。需在「设置 → 追踪项目」中开启衣柜追踪后才会自动记录。
+      </div>
+      <div class="wm-scroll-list" id="wm-wardrobe-list"></div>
+    </div>
+
+    <!-- 注入 -->
+    <div class="wm-tab-panel" data-panel="inject">
+      <div class="wm-file-group">
+        <div class="wm-file-group-title">逐项注入开关</div>
+        <div id="wm-inject-toggles"></div>
+      </div>
+      <div class="wm-file-group">
+        <div class="wm-file-group-title">调制器说明（注入给主模型）</div>
+        <textarea class="wm-textarea" id="wm-modulator-text" rows="12"></textarea>
+        <div class="wm-action-bar" style="margin-top:12px;margin-bottom:0;border:none;padding:0">
+          <button class="wm-btn" id="wm-modulator-reset">恢复默认</button>
+          <button class="wm-btn" id="wm-modulator-save">保存并注入</button>
+        </div>
+      </div>
+      <div class="wm-file-group">
+        <div class="wm-file-group-title">注入状态</div>
+        <div id="wm-inject-status" class="wm-item-desc">—</div>
+      </div>
+    </div>
+
+    <!-- 设置 -->
+    <div class="wm-tab-panel" data-panel="settings">
+      <div class="wm-file-group">
+        <div class="wm-file-group-title">分析模型</div>
+
+        <div class="wm-field-row">
+          <span class="wm-field-label">API 模式</span>
+          <div class="wm-field-body">
+            <select class="wm-select" id="wm-api-mode" style="width:100%">
+              <option value="main">复用主模型配置</option>
+              <option value="custom">独立配置</option>
+            </select>
+          </div>
+        </div>
+
+        <div id="wm-api-custom-fields">
+          <div class="wm-field-row">
+            <span class="wm-field-label">API 地址</span>
+            <div class="wm-field-body"><input class="wm-input" id="wm-api-url" placeholder="https://api.example.com/v1" style="width:100%"></div>
+          </div>
+          <div class="wm-field-row">
+            <span class="wm-field-label">API Key</span>
+            <div class="wm-field-body"><input class="wm-input" id="wm-api-key" type="password" placeholder="sk-…" style="width:100%"></div>
+          </div>
+          <div class="wm-field-row">
+            <span class="wm-field-label">模型</span>
+            <div class="wm-field-body" style="display:flex;gap:8px">
+              <input class="wm-input" id="wm-api-model" placeholder="模型名称" style="flex:1">
+              <button class="wm-btn" id="wm-api-fetch-models">拉取</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="wm-field-row" id="wm-main-hint-row" style="display:none">
+          <div class="wm-field-body">
+            <div class="wm-notice wm-info" id="wm-main-connection-hint">—</div>
+          </div>
+        </div>
+
+        <div class="wm-field-row">
+          <span class="wm-field-label">使用预设</span>
+          <div class="wm-field-body" style="display:flex;gap:10px;align-items:center">
+            <label class="wm-toggle-switch">
+              <input type="checkbox" id="wm-use-preset">
+              <span class="wm-slider"></span>
+            </label>
+            <select class="wm-select" id="wm-preset-name" style="flex:1"></select>
+          </div>
+        </div>
+
+        <div class="wm-field-row">
+          <span class="wm-field-label">温度</span>
+          <div class="wm-field-body"><input class="wm-input" id="wm-temperature" type="number" min="0" max="2" step="0.1" style="width:100%"></div>
+        </div>
+
+        <div class="wm-field-row">
+          <span class="wm-field-label">超时(秒)</span>
+          <div class="wm-field-body"><input class="wm-input" id="wm-timeout" type="number" min="5" step="5" style="width:100%"></div>
+        </div>
+      </div>
+
+      <div class="wm-file-group">
+        <div class="wm-file-group-title">追踪项目</div>
+        <div id="wm-track-toggles"></div>
+      </div>
+
+      <div class="wm-file-group">
+        <div class="wm-file-group-title">档案版本</div>
+        <div class="wm-scope-group" id="wm-profile-mode">
+          <button class="wm-scope-btn" data-mode="simple">简化版</button>
+          <button class="wm-scope-btn" data-mode="full">正常版</button>
+        </div>
+        <div class="wm-item-desc" style="margin-top:10px">
+          切换版本只影响显示与提示词字段；已有档案中不在新版本的字段会保留但不显示。
+        </div>
+      </div>
+
+      <div class="wm-file-group">
+        <div class="wm-file-group-title">触发设置</div>
+        <div class="wm-field-row">
+          <span class="wm-field-label">轮询间隔</span>
+          <div class="wm-field-body"><input class="wm-input" id="wm-poll-ms" type="number" min="800" step="100" style="width:100%"></div>
+        </div>
+        <div class="wm-field-row">
+          <span class="wm-field-label">携带消息数</span>
+          <div class="wm-field-body"><input class="wm-input" id="wm-context-size" type="number" min="1" max="60" style="width:100%"></div>
+        </div>
+      </div>
+
+      <div class="wm-file-group">
+        <div class="wm-file-group-title">数据</div>
+        <div class="wm-action-bar" style="margin:0;border:none;padding:0">
+          <button class="wm-btn" id="wm-data-export">导出全部数据</button>
+          <button class="wm-btn wm-btn-danger" id="wm-data-clear-chat">清空本聊天数据</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
