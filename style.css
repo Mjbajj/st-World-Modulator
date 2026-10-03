@@ -62,7 +62,13 @@
 /* ====== 主面板 ====== */
 #wm-panel {
   position: fixed;
+  /* 用 inset + margin:auto 居中：面板初始为 display:none，
+     JS 量不到尺寸，靠 CSS 居中才能保证一显示就在屏幕内。
+     拖拽时由 JS 写入 left/top 并清掉 margin 接管定位。 */
+  inset: 0;
+  margin: auto;
   width: 700px;
+  height: fit-content;
   max-width: calc(100vw - 24px);
   max-height: calc(100vh - 40px);
   display: none;

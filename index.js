@@ -1150,16 +1150,8 @@ function setupPanelDrag(panel) {
     handle.addEventListener('touchstart', onDown, { passive: true });
 }
 
-/** 居中面板 */
-function centerPanel(panel) {
-    if (panel.style.left) return;
-    const rect = panel.getBoundingClientRect();
-    if (rect.width === 0) return;
-    panel.style.left = `${Math.max(12, (window.innerWidth - rect.width) / 2)}px`;
-    panel.style.top = `${Math.max(12, (window.innerHeight - rect.height) / 2)}px`;
-    panel.style.right = 'auto';
-    panel.style.bottom = 'auto';
-}
+// 面板居中由 CSS 负责（见 #wm-panel 的 inset + margin:auto）。
+// 这里不再用 JS 测量：面板初始 display:none，量到的尺寸为 0，会算错位置。
 
 // ─────────────────────────────────────────────
 // 事件绑定
@@ -1434,7 +1426,6 @@ async function ensureDom(ctx) {
     const orb = document.getElementById(ORB_ID);
     if (panel) {
         setupPanelDrag(panel);
-        centerPanel(panel);
     }
     if (orb) {
         restoreOrbPosition(orb);
