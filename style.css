@@ -777,3 +777,103 @@
   border-bottom: 1px dashed rgba(255, 255, 255, 0.05);
 }
 .wm-sibling-item:last-child { border-bottom: none; }
+
+/* ====== 衣柜折叠 ====== */
+.wm-wardrobe-card {
+  border: 1px solid var(--wm-line);
+  border-radius: 8px;
+  margin-bottom: 8px;
+  background: rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+}
+.wm-wardrobe-char-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.wm-wardrobe-char-header:hover { background: rgba(0, 191, 255, 0.08); }
+.wm-wardrobe-arrow { color: var(--wm-cyan); font-size: 11px; flex-shrink: 0; width: 11px; }
+.wm-wardrobe-char-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--wm-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wm-wardrobe-char-count {
+  font-size: 11px;
+  color: var(--wm-text-mute);
+  flex-shrink: 0;
+  margin-right: 4px;
+}
+.wm-wardrobe-char-body {
+  border-top: 1px dashed rgba(255, 255, 255, 0.08);
+  padding: 2px 8px 8px;
+  max-height: 420px;
+  overflow-y: auto;
+}
+.wm-wardrobe-char-body::-webkit-scrollbar { width: 4px; }
+.wm-wardrobe-char-body::-webkit-scrollbar-thumb { background: rgba(0, 191, 255, 0.3); border-radius: 4px; }
+
+.wm-wardrobe-entry { border-bottom: 1px dashed rgba(255, 255, 255, 0.05); }
+.wm-wardrobe-entry:last-child { border-bottom: none; }
+.wm-wardrobe-entry-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 4px;
+  cursor: pointer;
+  border-radius: 5px;
+  transition: background 0.2s;
+}
+.wm-wardrobe-entry-head:hover { background: rgba(255, 255, 255, 0.04); }
+.wm-wardrobe-date {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--wm-amber);
+  opacity: 0.9;
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wm-wardrobe-brief {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--wm-text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wm-wardrobe-entry-actions { display: flex; gap: 2px; flex-shrink: 0; align-items: center; }
+
+.wm-wardrobe-detail {
+  padding: 2px 4px 10px 23px;
+  font-size: 12px;
+  line-height: 1.7;
+}
+.wm-wardrobe-detail-line { color: var(--wm-amber); font-size: 11px; margin-bottom: 4px; opacity: 0.85; }
+.wm-wardrobe-detail-text {
+  color: #cbd5e1;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ====== 动作栏内联开关 ====== */
+.wm-inline-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.wm-inline-toggle-label {
+  font-size: 11px;
+  color: var(--wm-text-mute);
+  white-space: nowrap;
+}

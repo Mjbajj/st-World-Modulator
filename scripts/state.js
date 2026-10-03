@@ -715,6 +715,58 @@ export function appendWardrobeEntry(ctx, name, entry, settings = null) {
     saveSettings(ctx);
 }
 
+/** 取某角色的全部衣柜记录 */
+export function getWardrobeEntries(ctx, name, settings = null) {
+    const s = settings || getSettings(ctx);
+    const data = getChatData(ctx, s);
+    const list = data.wardrobe?.[name];
+    return Array.isArray(list) ? list : [];
+}
+
+/** 按索引更新一条衣柜记录 */
+export function updateWardrobeEntry(ctx, name, index, patch, settings = null) {
+    const s = settings || getSettings(ctx);
+    const data = getChatData(ctx, s);
+    const list = data.wardrobe?.[name];
+    if (!Array.isArray(list) || index < 0 || index >= list.length) return false;
+    const entry = list[index];
+    if (patch.time !== undefined) entry.time = String(patch.time || '');
+    if (patch.scene !== undefined) entry.scene = String(patch.scene || '');
+    if (patch.outfit !== undefined) entry.outfit = String(patch.outfit || '');
+    entry.editedAt = Date.now();
+    saveSettings(ctx);
+    return true;
+}
+
+/** 按索引删除一条衣柜记录 */
+export function removeWardrobeEntry(ctx, name, index, settings = null) {
+    const s = settings || getSettings(ctx);
+    const data = getChatData(ctx, s);
+    const list = data.wardrobe?.[name];
+    if (!Array.isArray(list) || index < 0 || index >= list.length) return false;
+    list.splice(index, 1);
+    if (list.length === 0) delete data.wardrobe[name];
+    saveSettings(ctx);
+    return true;
+}
+
+/** 手动新增一条衣柜记录 */
+export function addWardrobeEntry(ctx, name, entry, settings = null) {
+    const s = settings || getSettings(ctx);
+    if (!s || !name) return false;
+    const data = getChatData(ctx, s);
+    if (!Array.isArray(data.wardrobe[name])) data.wardrobe[name] = [];
+    data.wardrobe[name].push({
+        time: String(entry?.time || data.worldState.当前时间 || ''),
+        scene: String(entry?.scene || ''),
+        outfit: String(entry?.outfit || ''),
+        at: Date.now(),
+        manual: true,
+    });
+    saveSettings(ctx);
+    return true;
+}
+
 // ─────────────────────────────────────────────
 // 消息签名（防重复分析）
 // ─────────────────────────────────────────────

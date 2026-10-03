@@ -228,11 +228,15 @@ function applyWardrobe(ctx, settings, wardrobe) {
                 count += 1;
                 continue;
             }
-            const outfit = String(entry.outfit || entry.服装 || entry.衣着 || entry.描述 || '').trim();
+            // 字段名容错：模型可能用「穿着/装扮/服饰」等不同写法
+            const outfit = String(
+                entry.outfit || entry.服装 || entry.衣着 || entry.穿着 || entry.装扮
+                || entry.服饰 || entry.描述 || entry.内容 || '',
+            ).trim();
             if (!outfit) continue;
             appendWardrobeEntry(ctx, name, {
-                time: String(entry.time || entry.时间 || ''),
-                scene: String(entry.scene || entry.场合 || ''),
+                time: String(entry.time || entry.时间 || entry.日期 || ''),
+                scene: String(entry.scene || entry.场合 || entry.场景 || entry.地点 || ''),
                 outfit,
             }, settings);
             count += 1;

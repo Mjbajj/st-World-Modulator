@@ -136,7 +136,9 @@ export function renderWardrobe(chatData, perCharacterLimit = 5) {
         blocks.push(`◆ ${name}\n${lines.join('\n')}`);
     }
     if (blocks.length === 0) return '';
-    return `【角色衣柜·历史穿着】\n${blocks.join('\n\n')}`;
+    return `【角色衣柜·历史穿着】
+历史穿着为角色拥有的衣物，可自行按需切换组合已有角色衣物。
+${blocks.join('\n\n')}`;
 }
 
 /**

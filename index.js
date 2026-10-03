@@ -29,6 +29,7 @@ import {
     DEFAULT_SETTINGS,
     createEmptyCharacter,
     addRuleDraft,
+    addWardrobeEntry,
     clearRetiredRules,
     clearRuleDrafts,
     copyCharacterToCurrentChat,
@@ -45,11 +46,13 @@ import {
     getRetiredRuleNames,
     getRuleDrafts,
     getSettings,
+    getWardrobeEntries,
     listSiblingChatData,
     normalizeApiProfiles,
     removeCharacter,
     removeRule,
     removeRuleDraft,
+    removeWardrobeEntry,
     reviveRule,
     applyApiProfile,
     clearPresetPromptOverrides,
@@ -60,6 +63,7 @@ import {
     setPresetPromptOverride,
     setRule,
     updateRuleDraft,
+    updateWardrobeEntry,
     upsertCharacter,
 } from './scripts/state.js';
 import {
@@ -633,30 +637,146 @@ function renderWardrobe(ctx) {
     const chatData = getChatData(ctx, settings);
     const list = $('#wm-wardrobe-list');
     if (!list) return;
+
+    // 页内开关跟设置同步
+    const trackToggle = $('#wm-wardrobe-track');
+    if (trackToggle) trackToggle.checked = settings.trackWardrobe === true;
+    const injectToggle = $('#wm-wardrobe-inject');
+    if (injectToggle) injectToggle.checked = settings.injectToggles?.wardrobe === true;
+
     list.innerHTML = '';
 
     const entries = Object.entries(chatData.wardrobe || {})
         .filter(([, items]) => Array.isArray(items) && items.length > 0);
 
     if (entries.length === 0) {
-        list.appendChild(buildEmptyState('衣柜为空。需在设置中开启「衣柜追踪」。'));
+        list.appendChild(buildEmptyState('衣柜为空。需在设置中开启「衣柜追踪」，或点上方按钮手动添加。'));
         return;
     }
 
     for (const [name, items] of entries) {
-        const item = el('div', 'wm-list-item');
-        item.style.flexDirection = 'column';
-        item.style.alignItems = 'stretch';
-        item.appendChild(el('div', 'wm-item-title', `${name}（${items.length} 条）`));
-
-        const body = el('div', 'wm-item-desc');
-        body.textContent = items.slice(-20).map((entry) => {
-            const head = [entry.time, entry.scene].filter(Boolean).join(' · ');
-            return head ? `${head}｜${entry.outfit}` : entry.outfit;
-        }).join('\n');
-        item.appendChild(body);
-        list.appendChild(item);
+        list.appendChild(buildWardrobeCard(ctx, name, items));
     }
+}
+
+/** 一个角色的衣柜卡片：外层折叠，内层逐条记录再折叠 */
+function buildWardrobeCard(ctx, name, items) {
+    const card = el('div', 'wm-wardrobe-card');
+
+    const header = el('div', 'wm-wardrobe-char-header');
+    const arrow = el('span', 'wm-wardrobe-arrow', '▸');
+    const title = el('div', 'wm-wardrobe-char-name', name);
+    const count = el('div', 'wm-wardrobe-char-count', `${items.length} 条`);
+
+    // 新增一条记录
+    const addBtn = el('button', 'wm-btn', '＋');
+    addBtn.title = '手动新增一条穿着记录';
+    addBtn.style.cssText = 'font-size:11px;padding:3px 9px';
+    addBtn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        void onEditWardrobeEntry(ctx, name, -1, null);
+    });
+
+    header.append(arrow, title, count, addBtn);
+
+    const body = el('div', 'wm-wardrobe-char-body');
+    body.style.display = 'none';
+
+    header.addEventListener('click', () => {
+        const open = body.style.display !== 'none';
+        body.style.display = open ? 'none' : '';
+        arrow.textContent = open ? '▸' : '▾';
+    });
+
+    // 倒序显示，最近的在最上面
+    items.map((entry, index) => ({ entry, index })).reverse().forEach(({ entry, index }) => {
+        body.appendChild(buildWardrobeEntryRow(ctx, name, index, entry));
+    });
+
+    card.append(header, body);
+    return card;
+}
+
+/** 单条穿着记录：标题是日期 + 简要描述，展开看详细 */
+function buildWardrobeEntryRow(ctx, name, index, entry) {
+    const row = el('div', 'wm-wardrobe-entry');
+
+    const head = el('div', 'wm-wardrobe-entry-head');
+    const arrow = el('span', 'wm-wardrobe-arrow', '▸');
+    const date = el('span', 'wm-wardrobe-date', String(entry.time || '未记时间'));
+    const brief = el('span', 'wm-wardrobe-brief', summarizeOutfit(entry.outfit));
+
+    const actions = el('div', 'wm-wardrobe-entry-actions');
+    const editBtn = el('button', 'wm-btn-icon wm-no-spin', '✎');
+    editBtn.title = '编辑';
+    editBtn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        void onEditWardrobeEntry(ctx, name, index, entry);
+    });
+    const delBtn = el('button', 'wm-item-delete', '✕');
+    delBtn.title = '删除';
+    delBtn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        if (!confirmDialog(`确定删除 ${name} 在「${entry.time || '未记时间'}」的这条穿着记录？`)) return;
+        removeWardrobeEntry(ctx, name, index);
+        renderWardrobe(ctx);
+        applyInjection(ctx);
+        toast('已删除', 'success');
+    });
+    actions.append(editBtn, delBtn);
+
+    head.append(arrow, date, brief, actions);
+
+    const detail = el('div', 'wm-wardrobe-detail');
+    detail.style.display = 'none';
+    if (entry.scene) detail.appendChild(el('div', 'wm-wardrobe-detail-line', `场合：${entry.scene}`));
+    detail.appendChild(el('div', 'wm-wardrobe-detail-text', String(entry.outfit || '（无描述）')));
+
+    head.addEventListener('click', () => {
+        const open = detail.style.display !== 'none';
+        detail.style.display = open ? 'none' : '';
+        arrow.textContent = open ? '▸' : '▾';
+    });
+
+    row.append(head, detail);
+    return row;
+}
+
+/** 取穿着描述的首句或前若干字，做折叠时的简要标题 */
+function summarizeOutfit(outfit) {
+    const text = String(outfit || '').trim();
+    if (!text) return '（无描述）';
+    const first = text.split(/[。；\n]/).find((s) => s.trim());
+    const brief = (first || text).trim();
+    return brief.length > 30 ? `${brief.slice(0, 30)}…` : brief;
+}
+
+/** 编辑（index < 0 表示新增）一条衣柜记录 */
+async function onEditWardrobeEntry(ctx, name, index, entry) {
+    const isNew = index < 0;
+    const settings = getSettings(ctx);
+    const chatData = getChatData(ctx, settings);
+    const result = await openModal({
+        title: isNew ? `为 ${name} 新增穿着` : `编辑 ${name} 的穿着`,
+        fields: [
+            { key: 'time', label: '时间', type: 'text', value: entry?.time || chatData.worldState.当前时间 || '' },
+            { key: 'scene', label: '场合', type: 'text', value: entry?.scene || '', placeholder: '如：卧室、教室、宴会' },
+            { key: 'outfit', label: '穿着描述', type: 'textarea', value: entry?.outfit || '', placeholder: '按部位写清：头饰/上衣/下衣/内衣/腿部/足部/配饰…' },
+        ],
+    });
+    if (!result) return;
+    const outfit = String(result.outfit || '').trim();
+    if (!outfit) return toast('穿着描述不能为空', 'warning');
+    const patch = { time: result.time, scene: result.scene, outfit };
+    if (isNew) {
+        addWardrobeEntry(ctx, name, patch, settings);
+        toast('已新增', 'success');
+    } else {
+        updateWardrobeEntry(ctx, name, index, patch, settings);
+        toast('已保存', 'success');
+    }
+    renderWardrobe(ctx);
+    applyInjection(ctx);
 }
 
 // ─────────────────────────────────────────────
@@ -1685,6 +1805,24 @@ function bindEvents(ctx) {
         uiState.charSearch = event.target.value;
         renderCharacters(ctx);
     }, 150));
+
+    // 衣柜
+    $('#wm-wardrobe-track')?.addEventListener('change', (event) => {
+        const settings = getSettings(ctx);
+        settings.trackWardrobe = Boolean(event.target.checked);
+        saveSettings(ctx);
+        renderSettings(ctx);
+        toast(settings.trackWardrobe ? '已开启衣柜自动记录' : '已关闭衣柜自动记录', 'info');
+    });
+    $('#wm-wardrobe-inject')?.addEventListener('change', (event) => {
+        const settings = getSettings(ctx);
+        if (!settings.injectToggles) settings.injectToggles = {};
+        settings.injectToggles.wardrobe = Boolean(event.target.checked);
+        saveSettings(ctx);
+        applyInjection(ctx);
+        renderInject(ctx);
+        renderInjectStatus(ctx);
+    });
 
     // 注入
     $('#wm-modulator-save')?.addEventListener('click', () => {

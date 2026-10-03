@@ -151,8 +151,24 @@
 
     <!-- 衣柜 -->
     <div class="wm-tab-panel" data-panel="wardrobe">
+      <div class="wm-action-bar">
+        <div class="wm-inline-toggle">
+          <span class="wm-inline-toggle-label">自动记录</span>
+          <label class="wm-toggle-switch" title="开启后从正文自动记录角色穿着">
+            <input type="checkbox" id="wm-wardrobe-track">
+            <span class="wm-slider"></span>
+          </label>
+        </div>
+        <div class="wm-inline-toggle">
+          <span class="wm-inline-toggle-label">注入衣柜</span>
+          <label class="wm-toggle-switch" title="是否把衣柜注入给主模型">
+            <input type="checkbox" id="wm-wardrobe-inject">
+            <span class="wm-slider"></span>
+          </label>
+        </div>
+      </div>
       <div class="wm-notice wm-info">
-        衣柜记录角色全部历史穿着。需在「设置 → 追踪项目」中开启衣柜追踪后才会自动记录。
+        点角色名展开该角色的全部穿着记录，再点单条记录看详细描述。每条都可编辑或删除。
       </div>
       <div class="wm-scroll-list" id="wm-wardrobe-list"></div>
     </div>
