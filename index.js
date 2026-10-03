@@ -53,7 +53,11 @@ import { getRunState, isPolling, poll, resetSettle, runTracker, startPolling, st
 
 const ORB_ID = 'wm-floating-orb';
 const PANEL_ID = 'wm-panel';
-const TEMPLATE_URL = `/scripts/extensions/third-party/${MODULE_NAME}/template.html`;
+/**
+ * 模板路径必须由当前模块 URL 推导，不能硬编码目录名——
+ * 扩展目录可能被改名（含中文名），硬编码会 404。
+ */
+const TEMPLATE_URL = new URL('./template.html', import.meta.url).href;
 const POSITION_KEY = `${MODULE_NAME}_orb_position`;
 
 // ─────────────────────────────────────────────
