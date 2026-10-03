@@ -390,10 +390,23 @@ function sleep(ms) {
 export async function callAnalyzer(settings, ctx, { systemPrompt, payload }, options = {}) {
     const connection = resolveConnection(settings, ctx);
     const timeoutMs = resolveTimeout(settings);
-    const messages = [
+    const messages = [];
+
+    // 套用预设：预设条目排在前面，插件自己的系统提示词与载荷始终追加在后面
+    if (settings?.usePreset === true && String(settings?.presetName || '').trim()) {
+        const presetMessages = buildPresetMessages(
+            ctx,
+            settings.presetName,
+            settings.presetPromptOverrides?.[String(settings.presetName).trim()] || {},
+            settings.presetApiId || 'openai',
+        );
+        messages.push(...presetMessages);
+    }
+
+    messages.push(
         { role: 'system', content: String(systemPrompt || '') },
         { role: 'user', content: JSON.stringify(payload ?? {}, null, 2) },
-    ];
+    );
 
     const body = {
         model: connection.model,
@@ -504,6 +517,119 @@ export async function fetchModelList(settings, ctx) {
 /** 记录最近一次发往模型的完整请求（调试用） */
 export function recordDebugRequest(entry) {
     globalThis[DEBUG_LAST_REQUEST_KEY] = { at: Date.now(), ...entry };
+}
+
+// ─────────────────────────────────────────────
+// 预设（读取 ST 预设管理器）
+// ─────────────────────────────────────────────
+
+/**
+ * 列出 ST 中可用的预设名。
+ *
+ * ST 的 getPresetManager(apiId).getAllPresets() 返回的是「名称字符串数组」，
+ * 而 getPresetList() 返回 { presets, preset_names } 对象。两者都要兼容，
+ * 早期版本直接用 Object.keys() 取数组会得到 '0','1','2' 这样的索引。
+ *
+ * @returns {{names: string[], activeName: string}}
+ */
+export function listPresets(ctx, apiId = 'openai') {
+    const names = [];
+    let activeName = '';
+    try {
+        const manager = ctx?.getPresetManager?.(apiId);
+        if (!manager) return { names, activeName };
+
+        if (typeof manager.getSelectedPresetName === 'function') {
+            activeName = String(manager.getSelectedPresetName() || '').trim();
+        }
+
+        if (typeof manager.getAllPresets === 'function') {
+            const all = manager.getAllPresets();
+            if (Array.isArray(all)) {
+                for (const item of all) {
+                    const name = String(item || '').trim();
+                    if (name) names.push(name);
+                }
+            } else if (all && typeof all === 'object') {
+                // 兼容可能返回 {name: preset} 的实现
+                for (const key of Object.keys(all)) {
+                    const name = String(key || '').trim();
+                    if (name) names.push(name);
+                }
+            }
+        }
+
+        if (names.length === 0 && typeof manager.getPresetList === 'function') {
+            const data = manager.getPresetList();
+            const source = data?.preset_names && typeof data.preset_names === 'object'
+                ? Object.keys(data.preset_names)
+                : (data?.presets && typeof data.presets === 'object' ? Object.keys(data.presets) : []);
+            for (const key of source) {
+                const name = String(key || '').trim();
+                if (name) names.push(name);
+            }
+        }
+    } catch (error) {
+        console.warn(`[${MODULE_NAME}] 读取预设列表失败`, error);
+    }
+
+    return {
+        names: [...new Set(names)].sort((a, b) => a.localeCompare(b)),
+        activeName,
+    };
+}
+
+/**
+ * 取某个预设里的提示词条目列表。
+ *
+ * @returns {Array<{identifier:string, name:string, enabled:boolean, role:string, content:string}>}
+ */
+export function getPresetPrompts(ctx, presetName, apiId = 'openai') {
+    const name = String(presetName || '').trim();
+    if (!name) return [];
+    try {
+        const manager = ctx?.getPresetManager?.(apiId);
+        if (!manager || typeof manager.getCompletionPresetByName !== 'function') return [];
+        const preset = manager.getCompletionPresetByName(name);
+        const prompts = Array.isArray(preset?.prompts) ? preset.prompts : [];
+        return prompts.map((prompt, index) => ({
+            identifier: String(prompt?.identifier || `prompt-${index}`),
+            name: String(prompt?.name || prompt?.identifier || `条目 ${index + 1}`),
+            enabled: prompt?.enabled !== false,
+            role: String(prompt?.role || 'system'),
+            system_prompt: Boolean(prompt?.system_prompt),
+            marker: Boolean(prompt?.marker),
+            content: String(prompt?.content || ''),
+        }));
+    } catch (error) {
+        console.warn(`[${MODULE_NAME}] 读取预设「${name}」条目失败`, error);
+        return [];
+    }
+}
+
+/**
+ * 按覆盖表把预设转成可发给模型的 messages。
+ *
+ * 只处理 system / user / assistant 三种常规角色的普通条目；
+ * marker、system_prompt 等 ST 内部标记条目跳过（它们要靠 ST 主流程展开，
+ * 独立调用时无法正确还原，硬塞反而会污染提示词）。
+ *
+ * @returns {Array<{role:string, content:string}>}
+ */
+export function buildPresetMessages(ctx, presetName, overrides = {}, apiId = 'openai') {
+    const prompts = getPresetPrompts(ctx, presetName, apiId);
+    const messages = [];
+    for (const prompt of prompts) {
+        if (prompt.marker) continue;
+        if (!String(prompt.content || '').trim()) continue;
+        const enabled = Object.hasOwn(overrides, prompt.identifier)
+            ? Boolean(overrides[prompt.identifier])
+            : prompt.enabled;
+        if (!enabled) continue;
+        const role = ['system', 'user', 'assistant'].includes(prompt.role) ? prompt.role : 'system';
+        messages.push({ role, content: prompt.content });
+    }
+    return messages;
 }
 
 export function getDebugInfo() {

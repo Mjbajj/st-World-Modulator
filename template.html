@@ -158,6 +158,21 @@
           </div>
         </div>
 
+        <!-- 连接配置组：保存多套连接设置随时切换 -->
+        <div class="wm-field-row">
+          <span class="wm-field-label">配置组</span>
+          <div class="wm-field-body" style="display:flex;flex-direction:column;gap:8px">
+            <select class="wm-select" id="wm-profile-select" style="width:100%">
+              <option value="">尚未保存配置组</option>
+            </select>
+            <div style="display:flex;gap:8px">
+              <input class="wm-input" id="wm-profile-name" placeholder="配置组名称" maxlength="40" style="flex:1">
+              <button class="wm-btn" id="wm-profile-save">保存</button>
+              <button class="wm-btn wm-btn-danger" id="wm-profile-delete">删除</button>
+            </div>
+          </div>
+        </div>
+
         <div id="wm-api-custom-fields">
           <div class="wm-field-row">
             <span class="wm-field-label">API 地址</span>
@@ -171,8 +186,22 @@
             <span class="wm-field-label">模型</span>
             <div class="wm-field-body" style="display:flex;gap:8px">
               <input class="wm-input" id="wm-api-model" placeholder="模型名称" style="flex:1">
-              <button class="wm-btn" id="wm-api-fetch-models">拉取</button>
             </div>
+          </div>
+        </div>
+
+        <div class="wm-field-row">
+          <span class="wm-field-label">模型列表</span>
+          <div class="wm-field-body" style="display:flex;gap:8px">
+            <select class="wm-select" id="wm-model-list" style="flex:1">
+              <option value="">请先拉取模型</option>
+            </select>
+            <button class="wm-btn" id="wm-api-fetch-models">拉取</button>
+          </div>
+        </div>
+        <div class="wm-field-row">
+          <div class="wm-field-body">
+            <div class="wm-item-desc" id="wm-connect-status">尚未连接</div>
           </div>
         </div>
 
@@ -189,7 +218,23 @@
               <input type="checkbox" id="wm-use-preset">
               <span class="wm-slider"></span>
             </label>
-            <select class="wm-select" id="wm-preset-name" style="flex:1"></select>
+            <select class="wm-select" id="wm-preset-name" style="flex:1">
+              <option value="">（不指定）</option>
+            </select>
+            <button class="wm-btn" id="wm-preset-refresh">刷新</button>
+          </div>
+        </div>
+
+        <!-- 预设条目：选中预设后逐条开关 -->
+        <div class="wm-field-row" id="wm-preset-prompts-row" style="display:none">
+          <span class="wm-field-label">预设条目</span>
+          <div class="wm-field-body">
+            <div class="wm-preset-prompt-list" id="wm-preset-prompts"></div>
+            <div style="display:flex;gap:8px;margin-top:8px">
+              <button class="wm-btn" id="wm-preset-all-on">全部启用</button>
+              <button class="wm-btn" id="wm-preset-all-off">全部禁用</button>
+              <button class="wm-btn" id="wm-preset-reset-override">恢复默认</button>
+            </div>
           </div>
         </div>
 
@@ -229,6 +274,10 @@
         <div class="wm-field-row">
           <span class="wm-field-label">携带消息数</span>
           <div class="wm-field-body"><input class="wm-input" id="wm-context-size" type="number" min="1" max="60" style="width:100%"></div>
+        </div>
+        <div class="wm-field-row">
+          <span class="wm-field-label">稳定窗口(毫秒)</span>
+          <div class="wm-field-body"><input class="wm-input" id="wm-settle-ms" type="number" min="200" step="100" style="width:100%"></div>
         </div>
       </div>
 

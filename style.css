@@ -599,3 +599,80 @@
   .wm-tab-btn { font-size: 11px; min-width: 64px; padding: 10px 4px; }
   .wm-char-details { padding: 14px 12px; }
 }
+
+/* ====== 预设条目开关 ====== */
+.wm-preset-prompt-list {
+  max-height: 260px;
+  overflow-y: auto;
+  border: 1px solid var(--wm-line);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.25);
+  padding: 4px 8px;
+}
+.wm-preset-prompt-list::-webkit-scrollbar { width: 4px; }
+.wm-preset-prompt-list::-webkit-scrollbar-track { background: transparent; }
+.wm-preset-prompt-list::-webkit-scrollbar-thumb { background: rgba(0, 191, 255, 0.3); border-radius: 4px; }
+.wm-preset-prompt-list::-webkit-scrollbar-thumb:hover { background: rgba(0, 191, 255, 0.6); }
+
+.wm-preset-prompt-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 2px;
+  border-bottom: 1px dashed rgba(255, 255, 255, 0.06);
+}
+.wm-preset-prompt-item:last-child { border-bottom: none; }
+.wm-preset-prompt-item.wm-disabled .wm-preset-prompt-name {
+  color: var(--wm-text-mute);
+  text-decoration: line-through;
+  opacity: 0.65;
+}
+
+.wm-preset-prompt-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--wm-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wm-preset-prompt-toggle {
+  position: relative;
+  flex-shrink: 0;
+  width: 36px;
+  height: 20px;
+  padding: 0;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background-color: rgba(0, 0, 0, 0.6);
+  cursor: pointer;
+  transition: .3s;
+}
+.wm-preset-prompt-thumb {
+  position: absolute;
+  left: 2px;
+  bottom: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background-color: var(--wm-text-mute);
+  transition: .3s;
+}
+.wm-preset-prompt-toggle.wm-on {
+  background-color: rgba(0, 191, 255, 0.2);
+  border-color: var(--wm-cyan);
+  box-shadow: 0 0 8px rgba(0, 191, 255, 0.4);
+}
+.wm-preset-prompt-toggle.wm-on .wm-preset-prompt-thumb {
+  transform: translateX(16px);
+  background-color: var(--wm-cyan);
+  box-shadow: 0 0 5px var(--wm-cyan);
+}
+
+/* 配置组的次级按钮行在窄屏时换行 */
+@media (max-width: 560px) {
+  .wm-preset-prompt-list { max-height: 200px; }
+}

@@ -60,6 +60,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
     apiKey: '',
     model: '',
     modelOptions: [],
+    /** 已保存的连接配置组（每套含端点到温度的全套连接设置） */
+    apiProfiles: [],
     apiTimeoutMs: 120000,
     /** 分析模型温度 */
     temperature: 0.3,
@@ -69,6 +71,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
     presetName: '',
     /** 预设所属 apiId */
     presetApiId: 'openai',
+    /** 逐条开关某个预设内的提示词：{ [预设名]: { [条目标识]: boolean } } */
+    presetPromptOverrides: {},
 
     /** ── 触发 ── */
     /** 轮询间隔（毫秒） */
@@ -534,4 +538,119 @@ export function describeCharactersForPrompt(characters, profileMode) {
         out[name] = { ...slim, __scope: entry?.scope || SCOPES.LOCAL };
     }
     return out;
+}
+
+// ─────────────────────────────────────────────
+// 连接配置组（可保存多套 API 配置随时切换）
+// ─────────────────────────────────────────────
+
+/** 最多保存的配置组数量 */
+export const API_PROFILE_LIMIT = 30;
+
+/** 一个配置组包含的连接字段 */
+export const API_PROFILE_FIELDS = Object.freeze([
+    'apiMode', 'apiUrl', 'apiKey', 'model', 'temperature',
+]);
+
+/** 规范化配置组列表：去空白、去重名、截断数量、过滤非法项 */
+export function normalizeApiProfiles(list) {
+    const seen = new Set();
+    const profiles = [];
+    for (const entry of (Array.isArray(list) ? list : [])) {
+        if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
+        const name = String(entry.name || '').trim().slice(0, 40);
+        if (!name || seen.has(name)) continue;
+        seen.add(name);
+        profiles.push({
+            name,
+            apiMode: entry.apiMode === 'custom' ? 'custom' : 'main',
+            apiUrl: String(entry.apiUrl || '').trim(),
+            apiKey: String(entry.apiKey || ''),
+            model: String(entry.model || '').trim(),
+            temperature: Number.isFinite(Number(entry.temperature)) ? Number(entry.temperature) : 0.3,
+            modelOptions: Array.isArray(entry.modelOptions)
+                ? entry.modelOptions.map((m) => String(m || '').trim()).filter(Boolean)
+                : [],
+        });
+        if (profiles.length >= API_PROFILE_LIMIT) break;
+    }
+    return profiles;
+}
+
+/**
+ * 以当前连接设置新增或覆盖同名配置组。
+ * @returns {boolean} 是否为覆盖已有配置组
+ */
+export function saveApiProfile(settings, name) {
+    const trimmed = String(name || '').trim().slice(0, 40);
+    if (!trimmed) throw new Error('请先输入配置组名称');
+    const profiles = normalizeApiProfiles(settings.apiProfiles);
+    const index = profiles.findIndex((profile) => profile.name === trimmed);
+    if (index < 0 && profiles.length >= API_PROFILE_LIMIT) {
+        throw new Error(`最多保存 ${API_PROFILE_LIMIT} 组`);
+    }
+    const profile = {
+        name: trimmed,
+        ...Object.fromEntries(API_PROFILE_FIELDS.map((field) => [field, settings[field]])),
+        // 模型列表跟着配置走，切换后不必重新拉取
+        modelOptions: Array.isArray(settings.modelOptions) ? [...settings.modelOptions] : [],
+    };
+    if (index >= 0) profiles[index] = profile;
+    else profiles.push(profile);
+    settings.apiProfiles = normalizeApiProfiles(profiles);
+    return index >= 0;
+}
+
+/** 把配置组套回当前连接设置 */
+export function applyApiProfile(settings, name) {
+    const trimmed = String(name || '').trim();
+    const profile = normalizeApiProfiles(settings.apiProfiles).find((entry) => entry.name === trimmed);
+    if (!profile) throw new Error('找不到这个配置组');
+    for (const field of API_PROFILE_FIELDS) settings[field] = profile[field];
+    settings.modelOptions = [...profile.modelOptions];
+    return profile;
+}
+
+export function deleteApiProfile(settings, name) {
+    const trimmed = String(name || '').trim();
+    const profiles = normalizeApiProfiles(settings.apiProfiles);
+    const next = profiles.filter((profile) => profile.name !== trimmed);
+    if (next.length === profiles.length) throw new Error('找不到这个配置组');
+    settings.apiProfiles = next;
+}
+
+// ─────────────────────────────────────────────
+// 预设条目覆盖（逐条开关预设内的提示词）
+// ─────────────────────────────────────────────
+
+/**
+ * 取某个预设的条目开关覆盖表。
+ * 结构：settings.presetPromptOverrides = { [预设名]: { [条目标识]: boolean } }
+ */
+export function getPresetPromptOverrides(settings, presetName) {
+    const all = settings?.presetPromptOverrides;
+    if (!all || typeof all !== 'object') return {};
+    const one = all[String(presetName || '')];
+    return (one && typeof one === 'object' && !Array.isArray(one)) ? one : {};
+}
+
+/** 写入某个预设某条目的开关状态 */
+export function setPresetPromptOverride(settings, presetName, identifier, enabled) {
+    const name = String(presetName || '').trim();
+    const id = String(identifier || '').trim();
+    if (!name || !id) return;
+    if (!settings.presetPromptOverrides || typeof settings.presetPromptOverrides !== 'object') {
+        settings.presetPromptOverrides = {};
+    }
+    if (!settings.presetPromptOverrides[name] || typeof settings.presetPromptOverrides[name] !== 'object') {
+        settings.presetPromptOverrides[name] = {};
+    }
+    settings.presetPromptOverrides[name][id] = Boolean(enabled);
+}
+
+/** 清掉某个预设的全部条目覆盖 */
+export function clearPresetPromptOverrides(settings, presetName) {
+    const name = String(presetName || '').trim();
+    if (!settings?.presetPromptOverrides || typeof settings.presetPromptOverrides !== 'object') return;
+    delete settings.presetPromptOverrides[name];
 }

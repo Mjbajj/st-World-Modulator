@@ -34,18 +34,27 @@ import {
     getContextSafe,
     getMergedCharacters,
     getMergedRules,
+    getPresetPromptOverrides,
     getSettings,
+    normalizeApiProfiles,
     removeCharacter,
     removeRule,
+    applyApiProfile,
+    clearPresetPromptOverrides,
+    deleteApiProfile,
+    saveApiProfile,
     saveSettings,
     saveSettingsNow,
+    setPresetPromptOverride,
     setRule,
     upsertCharacter,
 } from './scripts/state.js';
 import {
     fetchModelList,
     getDebugInfo,
+    getPresetPrompts,
     isMainConnectionAvailable,
+    listPresets,
     resolveConnection,
 } from './scripts/api.js';
 import { applyInjection, clearInjection, getInjectedKeys } from './scripts/inject.js';
@@ -682,11 +691,14 @@ function renderSettings(ctx) {
     setValue('#wm-timeout', Math.round((Number(settings.apiTimeoutMs) || 120000) / 1000));
     setValue('#wm-poll-ms', settings.pollMs);
     setValue('#wm-context-size', settings.contextSize);
+    setValue('#wm-settle-ms', settings.settleMs);
+
+    renderProfileSelect(ctx);
+    renderModelOptions(ctx);
+    renderPresetOptions(ctx);
 
     const usePreset = $('#wm-use-preset');
     if (usePreset) usePreset.checked = settings.usePreset === true;
-
-    renderPresetOptions(ctx);
 
     // 档案版本
     const modeGroup = $('#wm-profile-mode');
@@ -716,10 +728,63 @@ function renderSettings(ctx) {
     }
 }
 
-function setValue(selector, value) {
-    const input = $(selector);
-    if (input && document.activeElement !== input) {
-        input.value = value ?? '';
+/** 渲染连接配置组下拉 */
+function renderProfileSelect(ctx, selectedName = '') {
+    const select = $('#wm-profile-select');
+    if (!select) return;
+    const settings = getSettings(ctx);
+    const profiles = normalizeApiProfiles(settings?.apiProfiles);
+    const keep = String(selectedName || select.value || '');
+    select.innerHTML = profiles.length > 0
+        ? `<option value="">选择配置组以套用</option>${profiles.map((p) => `<option value="${escapeHtml(p.name)}">${escapeHtml(p.name)}</option>`).join('')}`
+        : '<option value="">尚未保存配置组</option>';
+    select.value = profiles.some((p) => p.name === keep) ? keep : '';
+}
+
+/** 渲染已拉取的模型列表 */
+function renderModelOptions(ctx) {
+    const select = $('#wm-model-list');
+    if (!select) return;
+    const settings = getSettings(ctx);
+    const models = Array.isArray(settings?.modelOptions) ? settings.modelOptions : [];
+    if (models.length === 0) {
+        select.innerHTML = '<option value="">请先拉取模型</option>';
+        return;
+    }
+    select.innerHTML = '<option value="">选择一个模型</option>';
+    for (const id of models) {
+        const option = el('option', null, id);
+        option.value = id;
+        if (id === settings.model) option.selected = true;
+        select.appendChild(option);
+    }
+}
+
+/** 连接并拉取模型 */
+async function connectAndLoadModels(ctx) {
+    const settings = getSettings(ctx);
+    const button = $('#wm-api-fetch-models');
+    const status = $('#wm-connect-status');
+    if (button) button.disabled = true;
+    if (status) status.textContent = '连接中，正在拉取模型…';
+    try {
+        const models = await fetchModelList(settings, ctx);
+        settings.modelOptions = models;
+        if (!settings.model || !models.includes(settings.model)) {
+            settings.model = models[0];
+        }
+        saveSettings(ctx);
+        renderModelOptions(ctx);
+        const modelInput = $('#wm-api-model');
+        if (modelInput) modelInput.value = settings.model;
+        if (status) status.textContent = `已连接，拉取到 ${models.length} 个模型`;
+        toast(`已拉取 ${models.length} 个模型`, 'success');
+    } catch (error) {
+        const message = String(error?.message || error);
+        if (status) status.textContent = message;
+        toast(message, 'error');
+    } finally {
+        if (button) button.disabled = false;
     }
 }
 
@@ -727,23 +792,89 @@ function renderPresetOptions(ctx) {
     const select = $('#wm-preset-name');
     if (!select) return;
     const settings = getSettings(ctx);
-    const current = settings?.presetName || '';
-    select.innerHTML = '<option value="">（不指定）</option>';
+    const current = String(settings?.presetName || '');
+    const { names } = listPresets(ctx, settings?.presetApiId || 'openai');
 
-    let names = [];
-    try {
-        const manager = ctx?.getPresetManager?.(settings?.presetApiId || 'openai');
-        const all = manager?.getAllPresets?.();
-        if (all && typeof all === 'object') names = Object.keys(all);
-    } catch (error) {
-        console.warn(`[${MODULE_NAME}] 读取预设列表失败`, error);
-    }
-    for (const name of names.sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'))) {
+    select.innerHTML = '<option value="">（不指定）</option>';
+    for (const name of names) {
         const option = el('option', null, name);
         option.value = name;
         select.appendChild(option);
     }
-    select.value = current;
+    select.value = names.includes(current) ? current : '';
+    renderPresetPrompts(ctx);
+}
+
+/**
+ * 渲染所选预设的条目开关。
+ * 只有启用了「使用预设」并选中预设时才显示。
+ */
+function renderPresetPrompts(ctx) {
+    const container = $('#wm-preset-prompts');
+    const row = $('#wm-preset-prompts-row');
+    if (!container || !row) return;
+
+    const settings = getSettings(ctx);
+    const presetName = settings?.usePreset === true ? String(settings.presetName || '').trim() : '';
+    if (!presetName) {
+        row.style.display = 'none';
+        container.innerHTML = '';
+        return;
+    }
+
+    const prompts = getPresetPrompts(ctx, presetName, settings.presetApiId || 'openai');
+    if (prompts.length === 0) {
+        row.style.display = '';
+        container.innerHTML = '<div class="wm-item-desc">这个预设没有可单独开关的条目。</div>';
+        return;
+    }
+
+    const overrides = getPresetPromptOverrides(settings, presetName);
+    row.style.display = '';
+    container.innerHTML = '';
+
+    for (const prompt of prompts) {
+        const enabled = Object.hasOwn(overrides, prompt.identifier)
+            ? Boolean(overrides[prompt.identifier])
+            : prompt.enabled;
+        const item = el('div', 'wm-preset-prompt-item');
+        if (!enabled) item.classList.add('wm-disabled');
+
+        const label = el('span', 'wm-preset-prompt-name', prompt.name);
+        label.title = `${prompt.name}（${prompt.role}${prompt.marker ? ' · marker' : ''}）`;
+
+        const toggle = el('button', 'wm-preset-prompt-toggle');
+        toggle.type = 'button';
+        toggle.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+        toggle.classList.toggle('wm-on', enabled);
+        toggle.innerHTML = '<span class="wm-preset-prompt-thumb"></span>';
+        toggle.addEventListener('click', () => {
+            const latest = getSettings(ctx);
+            const current = getPresetPromptOverrides(latest, presetName);
+            const nowEnabled = Object.hasOwn(current, prompt.identifier)
+                ? Boolean(current[prompt.identifier])
+                : prompt.enabled;
+            setPresetPromptOverride(latest, presetName, prompt.identifier, !nowEnabled);
+            saveSettings(ctx);
+            renderPresetPrompts(ctx);
+        });
+
+        item.appendChild(label);
+        item.appendChild(toggle);
+        container.appendChild(item);
+    }
+}
+
+/** 批量设置所选预设的条目开关 */
+function setAllPresetPrompts(ctx, enabled) {
+    const settings = getSettings(ctx);
+    const presetName = String(settings?.presetName || '').trim();
+    if (settings?.usePreset !== true || !presetName) return;
+    for (const prompt of getPresetPrompts(ctx, presetName, settings.presetApiId || 'openai')) {
+        setPresetPromptOverride(settings, presetName, prompt.identifier, enabled);
+    }
+    saveSettings(ctx);
+    renderPresetPrompts(ctx);
 }
 
 // ─────────────────────────────────────────────
@@ -1248,37 +1379,105 @@ function bindEvents(ctx) {
         settings.model = String(event.target.value || '').trim();
         saveSettings(ctx);
     });
-    $('#wm-api-fetch-models')?.addEventListener('click', async () => {
+    $('#wm-model-list')?.addEventListener('change', (event) => {
+        const next = String(event.target.value || '').trim();
+        if (!next) return;
         const settings = getSettings(ctx);
-        const button = $('#wm-api-fetch-models');
-        if (button) button.disabled = true;
+        settings.model = next;
+        saveSettings(ctx);
+        const input = $('#wm-api-model');
+        if (input) input.value = next;
+    });
+    $('#wm-api-fetch-models')?.addEventListener('click', () => {
+        void connectAndLoadModels(ctx);
+    });
+
+    // 设置：连接配置组
+    $('#wm-profile-select')?.addEventListener('change', (event) => {
+        const name = String(event.target.value || '').trim();
+        if (!name) return;
         try {
-            const models = await fetchModelList(settings, ctx);
-            settings.modelOptions = models;
+            const settings = getSettings(ctx);
+            applyApiProfile(settings, name);
             saveSettings(ctx);
-            const select = $('#wm-api-model');
-            if (select) {
-                select.value = models[0] || settings.model;
-                settings.model = select.value;
-                saveSettings(ctx);
-            }
-            toast(`拉取到 ${models.length} 个模型，已填入第一个`, 'success');
+            renderSettings(ctx);
+            const nameInput = $('#wm-profile-name');
+            if (nameInput) nameInput.value = name;
+            const status = $('#wm-connect-status');
+            if (status) status.textContent = '已切换配置组';
+            toast(`已套用配置组「${name}」`, 'success');
         } catch (error) {
-            toast(`拉取失败：${error?.message || error}`, 'error');
-        } finally {
-            if (button) button.disabled = false;
+            toast(String(error?.message || error), 'error');
         }
     });
+    $('#wm-profile-save')?.addEventListener('click', () => {
+        const name = String($('#wm-profile-name')?.value || '').trim();
+        if (!name) return toast('请先输入配置组名称', 'warning');
+        try {
+            const settings = getSettings(ctx);
+            const existed = (settings.apiProfiles || []).some((p) => p.name === name);
+            if (existed && !confirmDialog(`已有配置组「${name}」，要用当前设置覆盖吗？`)) return;
+            saveApiProfile(settings, name);
+            saveSettings(ctx);
+            renderProfileSelect(ctx, name);
+            toast(`已${existed ? '覆盖' : '保存'}配置组「${name}」`, 'success');
+        } catch (error) {
+            toast(String(error?.message || error), 'warning');
+        }
+    });
+    $('#wm-profile-delete')?.addEventListener('click', () => {
+        const name = String($('#wm-profile-select')?.value || $('#wm-profile-name')?.value || '').trim();
+        if (!name) return toast('请先选择要删除的配置组', 'warning');
+        if (!confirmDialog(`确定删除配置组「${name}」？当前连接设置不受影响。`)) return;
+        try {
+            const settings = getSettings(ctx);
+            deleteApiProfile(settings, name);
+            saveSettings(ctx);
+            renderProfileSelect(ctx);
+            const nameInput = $('#wm-profile-name');
+            if (nameInput) nameInput.value = '';
+            toast(`已删除配置组「${name}」`, 'success');
+        } catch (error) {
+            toast(String(error?.message || error), 'error');
+        }
+    });
+
+    // 设置：预设
     $('#wm-use-preset')?.addEventListener('change', (event) => {
         const settings = getSettings(ctx);
         settings.usePreset = event.target.checked;
         saveSettings(ctx);
+        renderPresetPrompts(ctx);
     });
     $('#wm-preset-name')?.addEventListener('change', (event) => {
         const settings = getSettings(ctx);
-        settings.presetName = event.target.value;
+        const next = String(event.target.value || '').trim();
+        settings.presetName = next;
+        // 选了别的预设，「使用预设」开关自动打开，否则条目区不显示，很费解
+        if (next && settings.usePreset !== true) {
+            settings.usePreset = true;
+            const toggle = $('#wm-use-preset');
+            if (toggle) toggle.checked = true;
+        }
         saveSettings(ctx);
+        renderPresetPrompts(ctx);
     });
+    $('#wm-preset-refresh')?.addEventListener('click', () => {
+        renderPresetOptions(ctx);
+        toast('已刷新预设列表', 'info');
+    });
+    $('#wm-preset-all-on')?.addEventListener('click', () => setAllPresetPrompts(ctx, true));
+    $('#wm-preset-all-off')?.addEventListener('click', () => setAllPresetPrompts(ctx, false));
+    $('#wm-preset-reset-override')?.addEventListener('click', () => {
+        const settings = getSettings(ctx);
+        const name = String(settings?.presetName || '').trim();
+        if (!name) return;
+        clearPresetPromptOverrides(settings, name);
+        saveSettings(ctx);
+        renderPresetPrompts(ctx);
+        toast('已恢复预设默认开关', 'success');
+    });
+
     $('#wm-temperature')?.addEventListener('input', (event) => {
         const settings = getSettings(ctx);
         settings.temperature = Number(event.target.value) || 0;
@@ -1299,6 +1498,11 @@ function bindEvents(ctx) {
     $('#wm-context-size')?.addEventListener('input', (event) => {
         const settings = getSettings(ctx);
         settings.contextSize = Math.max(1, Math.min(60, Number(event.target.value) || 12));
+        saveSettings(ctx);
+    });
+    $('#wm-settle-ms')?.addEventListener('input', (event) => {
+        const settings = getSettings(ctx);
+        settings.settleMs = Math.max(200, Number(event.target.value) || 1400);
         saveSettings(ctx);
     });
 
@@ -1329,9 +1533,26 @@ function onExportData(ctx) {
         exportedAt: new Date().toISOString(),
         chatKey: getChatKey(ctx),
         settings: {
+            enabled: settings.enabled,
             profileMode: settings.profileMode,
             injectToggles: settings.injectToggles,
             modulatorInjection: settings.modulatorInjection,
+            apiMode: settings.apiMode,
+            apiUrl: settings.apiUrl,
+            model: settings.model,
+            temperature: settings.temperature,
+            usePreset: settings.usePreset,
+            presetName: settings.presetName,
+            presetPromptOverrides: settings.presetPromptOverrides,
+            // 配置组含 API Key，导出文件请自行妥善保管
+            apiProfiles: settings.apiProfiles,
+            trackWorldState: settings.trackWorldState,
+            trackWorldRules: settings.trackWorldRules,
+            trackRecommendRules: settings.trackRecommendRules,
+            trackWardrobe: settings.trackWardrobe,
+            pollMs: settings.pollMs,
+            contextSize: settings.contextSize,
+            settleMs: settings.settleMs,
         },
         globalRules: settings.globalRules,
         globalCharacters: settings.globalCharacters,
