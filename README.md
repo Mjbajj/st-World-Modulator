@@ -191,7 +191,7 @@ scripts/
 | 传输降级 | 宿主代理失败后改用直连的兜底逻辑 |
 | 界面风格 | 悬浮球 + 可拖动面板 + 魔杖菜单入口的交互形态 |
 
-项目的部分代码逻辑与提示词组织方式源自该项目，按照 Apache License 2.0 的要求，原项目的版权与许可声明见 [LICENSE-BS-BioTracker](LICENSE-BS-BioTracker)。
+本项目的实现思路、架构设计与部分代码逻辑参考自该项目。两个项目采用相同的 Apache License 2.0，原项目的版权归属见 [LICENSE-BS-BioTracker](LICENSE-BS-BioTracker)。
 
 ### SillyTavern
 
@@ -204,6 +204,18 @@ scripts/
 
 ## 许可
 
-本项目采用 MIT License，见 [LICENSE](LICENSE)。
+本项目采用 **Apache License 2.0**，与参考项目 BS BioTracker 保持一致。完整许可正文见 [LICENSE](LICENSE)。
 
-第三方组件的许可声明见 [LICENSE-BS-BioTracker](LICENSE-BS-BioTracker)。
+```
+Copyright 2026 Mj
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+```
+
+该许可允许自由使用、修改与再分发（包括商业用途），条件为保留版权声明与许可声明、标明修改过的文件。
+
+第三方组件的许可归属见 [LICENSE-BS-BioTracker](LICENSE-BS-BioTracker)。
