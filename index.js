@@ -1673,14 +1673,85 @@ function restoreOrbPosition(orb) {
 // 面板显示控制
 // ─────────────────────────────────────────────
 
+/**
+ * 把面板位置钳制到「始终可抓取」的范围内。
+ *
+ * 面板高度由 CSS 的 max-height 限制，正常情况下不会超过视口；但用户手动
+ * 拖拽、或切换标签后内容变高时，仍可能出现超出的情况。策略：
+ *   - 装得下：完整限制在视口内，四边都不许出去。
+ *   - 装不下：顶部优先露出（状态栏是主要操作区），底部至少留 PANEL_MIN_VISIBLE。
+ */
+const PANEL_MIN_VISIBLE = 56;
+
+function clampPanelPosition(panel, left, top) {
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const w = panel.offsetWidth || 300;
+    const h = panel.offsetHeight || 300;
+
+    // 横向：不能整块跑到屏幕外
+    const minLeft = Math.min(0, vw - w);
+    const maxLeft = Math.max(0, vw - w);
+    const clampedLeft = Math.min(Math.max(left, minLeft), maxLeft);
+
+    // 纵向
+    let minTop;
+    let maxTop;
+    if (h <= vh) {
+        // 装得下：完整限制在视口内
+        minTop = 0;
+        maxTop = Math.max(0, vh - h);
+    } else {
+        // 比视口高：顶部必须保持可见（状态栏是主操作区），底部把手至少留一点。
+        // 溢出交给内部 .wm-main-content 滚动消化，不允许靠拖出屏幕来看内容。
+        minTop = 0;
+        maxTop = 0;
+    }
+    const clampedTop = Math.min(Math.max(top, minTop), maxTop);
+
+    return { left: clampedLeft, top: clampedTop };
+}
+
+/** 把面板放回屏幕内的默认位置（横向居中、纵向靠上留边距） */
+function resetPanelPosition(panel = null) {
+    const el2 = panel || document.getElementById(PANEL_ID);
+    if (!el2) return;
+    el2.style.left = '50%';
+    el2.style.top = '12px';
+    el2.style.transform = 'translateX(-50%)';
+}
+
 function openPanel() {
     const panel = document.getElementById(PANEL_ID);
     if (!panel) return;
     panel.classList.add('wm-open');
     panel.style.display = 'flex';
+    // 若上次关闭时面板停在屏幕外（例如换到更小的屏 / 手机横竖屏切换），
+    // 打开时拉回可视区，避免一打开就够不着。
+    ensurePanelReachable(panel);
     renderAll();
     const settings = getSettings();
     switchTab(settings?.lastTab || 'world');
+}
+
+/** 面板若已滑出可视区，把它拉回来 */
+function ensurePanelReachable(panel) {
+    // 未拖拽过：没有任何 inline 定位，交给 CSS，天然可见
+    if (!panel.style.left) return;
+    const rect = panel.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+
+    // 横向要求两侧都还在屏内
+    const visibleX = rect.left >= -1 && rect.right <= vw + 1;
+    // 纵向：顶部状态栏必须能看到（它是主操作区），底部至少有把手露出
+    const visibleY = rect.top >= -1 && rect.top <= vh - PANEL_MIN_VISIBLE;
+    if (visibleX && visibleY) return;
+
+    const next = clampPanelPosition(panel, rect.left, rect.top);
+    panel.style.left = `${next.left}px`;
+    panel.style.top = `${next.top}px`;
+    panel.style.transform = 'none';
 }
 
 function closePanel() {
@@ -1699,44 +1770,61 @@ function togglePanel() {
 }
 
 function setupPanelDrag(panel) {
-    const handle = $('.wm-status-header', panel);
-    if (!handle) return;
+    const handles = [$('.wm-status-header', panel), $('.wm-panel-grip', panel)].filter(Boolean);
+    if (handles.length === 0) return;
+
     let dragging = false;
     let startX = 0;
     let startY = 0;
     let originLeft = 0;
     let originTop = 0;
 
+    /** 从 inline style 解析当前坐标；未拖过时按 CSS 布局量一次并固化 */
+    const currentPosition = () => {
+        if (panel.style.left && panel.style.transform === 'none') {
+            return { left: parseFloat(panel.style.left) || 0, top: parseFloat(panel.style.top) || 0 };
+        }
+        const rect = panel.getBoundingClientRect();
+        return { left: rect.left, top: rect.top };
+    };
+
     const onDown = (event) => {
         if (event.target.closest('button, input, select, textarea, .wm-toggle-switch')) return;
         const point = event.touches?.[0] || event;
+        if (!point || point.clientX === undefined) return;
+
+        const pos = currentPosition();
+        // 首次拖拽：把当前视觉位置固化到 left/top，并去掉居中用的 transform
+        originLeft = pos.left;
+        originTop = pos.top;
+        panel.style.left = `${originLeft}px`;
+        panel.style.top = `${originTop}px`;
+        panel.style.transform = 'none';
+        panel.style.margin = '0';
+
         dragging = true;
         startX = point.clientX;
         startY = point.clientY;
-        const rect = panel.getBoundingClientRect();
-        originLeft = rect.left;
-        originTop = rect.top;
-        panel.style.left = `${rect.left}px`;
-        panel.style.top = `${rect.top}px`;
-        panel.style.right = 'auto';
-        panel.style.bottom = 'auto';
-        panel.style.margin = '0';
+
         document.addEventListener('mousemove', onMove);
         document.addEventListener('mouseup', onUp);
         document.addEventListener('touchmove', onMove, { passive: false });
         document.addEventListener('touchend', onUp);
+        document.addEventListener('touchcancel', onUp);
     };
 
     const onMove = (event) => {
         if (!dragging) return;
         const point = event.touches?.[0] || event;
+        if (!point || point.clientX === undefined) return;
         if (event.cancelable) event.preventDefault();
-        const maxLeft = window.innerWidth - panel.offsetWidth;
-        const maxTop = window.innerHeight - panel.offsetHeight;
-        const left = Math.min(Math.max(0, originLeft + point.clientX - startX), Math.max(0, maxLeft));
-        const top = Math.min(Math.max(0, originTop + point.clientY - startY), Math.max(0, maxTop));
-        panel.style.left = `${left}px`;
-        panel.style.top = `${top}px`;
+        const next = clampPanelPosition(
+            panel,
+            originLeft + point.clientX - startX,
+            originTop + point.clientY - startY,
+        );
+        panel.style.left = `${next.left}px`;
+        panel.style.top = `${next.top}px`;
     };
 
     const onUp = () => {
@@ -1746,14 +1834,37 @@ function setupPanelDrag(panel) {
         document.removeEventListener('mouseup', onUp);
         document.removeEventListener('touchmove', onMove);
         document.removeEventListener('touchend', onUp);
+        document.removeEventListener('touchcancel', onUp);
+        // 松手后再钳一次：拖动中面板尺寸可能因为切换标签而变化
+        const pos = currentPosition();
+        const next = clampPanelPosition(panel, pos.left, pos.top);
+        panel.style.left = `${next.left}px`;
+        panel.style.top = `${next.top}px`;
     };
 
-    handle.addEventListener('mousedown', onDown);
-    handle.addEventListener('touchstart', onDown, { passive: true });
-}
+    /** 双击 / 双指轻点把手：复位到屏幕内 */
+    let lastTapAt = 0;
+    const onResetTap = (event) => {
+        const now = Date.now();
+        if (now - lastTapAt < 320) {
+            lastTapAt = 0;
+            event.preventDefault();
+            resetPanelPosition(panel);
+            return;
+        }
+        lastTapAt = now;
+    };
 
-// 面板居中由 CSS 负责（见 #wm-panel 的 inset + margin:auto）。
-// 这里不再用 JS 测量：面板初始 display:none，量到的尺寸为 0，会算错位置。
+    for (const handle of handles) {
+        handle.addEventListener('mousedown', onDown);
+        handle.addEventListener('touchstart', onDown, { passive: true });
+        handle.addEventListener('dblclick', (event) => {
+            event.preventDefault();
+            resetPanelPosition(panel);
+        });
+        handle.addEventListener('touchend', onResetTap);
+    }
+}
 
 // ─────────────────────────────────────────────
 // 事件绑定
@@ -2241,11 +2352,18 @@ async function ensureDom(ctx) {
     window.addEventListener('resize', () => {
         const p = document.getElementById(PANEL_ID);
         if (p && p.style.left) {
-            const rect = p.getBoundingClientRect();
-            const maxLeft = window.innerWidth - rect.width;
-            const maxTop = window.innerHeight - rect.height;
-            if (rect.left > maxLeft) p.style.left = `${Math.max(0, maxLeft)}px`;
-            if (rect.top > maxTop) p.style.top = `${Math.max(0, maxTop)}px`;
+            const next = clampPanelPosition(p, parseFloat(p.style.left) || 0, parseFloat(p.style.top) || 0);
+            p.style.left = `${next.left}px`;
+            p.style.top = `${next.top}px`;
+        }
+        // 悬浮球同理：转屏后可能跑到屏幕外
+        const orb = document.getElementById(ORB_ID);
+        if (orb && orb.style.left) {
+            const size = orb.offsetWidth || 52;
+            const left = Math.min(Math.max(0, parseFloat(orb.style.left) || 0), Math.max(0, window.innerWidth - size));
+            const top = Math.min(Math.max(0, parseFloat(orb.style.top) || 0), Math.max(0, window.innerHeight - size));
+            orb.style.left = `${left}px`;
+            orb.style.top = `${top}px`;
         }
     });
 }

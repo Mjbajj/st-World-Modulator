@@ -271,15 +271,17 @@
 /* ====== 主面板 ====== */
 #wm-panel {
   position: fixed;
-  /* 用 inset + margin:auto 居中：面板初始为 display:none，
-     JS 量不到尺寸，靠 CSS 居中才能保证一显示就在屏幕内。
-     拖拽时由 JS 写入 left/top 并清掉 margin 接管定位。 */
-  inset: 0;
-  margin: auto;
+  /* 初始位置：横向居中、纵向留出安全边距。
+     不用 inset:0 + margin:auto —— 那样在内容高于视口时（手机常见）
+     会把顶部推到屏幕外，而唯一的拖拽手柄正好在顶部，导致再也拖不回来。 */
+  left: 50%;
+  top: max(12px, env(safe-area-inset-top, 0px));
+  transform: translateX(-50%);
   width: 700px;
-  height: fit-content;
+  height: auto;
   max-width: calc(100vw - 24px);
-  max-height: calc(100vh - 40px);
+  /* dvh 跟随移动端地址栏收放，100vh 在手机上会偏大 */
+  max-height: calc(100dvh - 24px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
   display: none;
   flex-direction: column;
   background: var(--wm-panel-bg);
@@ -340,6 +342,7 @@
   justify-content: space-between;
   align-items: center;
   flex-wrap: wrap;
+  flex-shrink: 0;
   gap: 12px;
   padding: 14px 20px;
   background: var(--wm-glow-wash);
@@ -377,6 +380,7 @@
 /* ====== 全局操作区 ====== */
 .wm-global-actions {
   display: flex; justify-content: center; flex-wrap: wrap; gap: 12px;
+  flex-shrink: 0;
   padding: 10px;
   background: var(--wm-sink-soft);
   border-bottom: 1px solid var(--wm-line-soft);
@@ -386,6 +390,7 @@
 /* ====== Tab 导航 ====== */
 .wm-tabs-nav {
   display: flex;
+  flex-shrink: 0;
   background: var(--wm-sink-mid);
   border-bottom: 1px solid var(--wm-glow-line);
   overflow-x: auto;
@@ -424,9 +429,12 @@
 .wm-main-content {
   position: relative;
   padding: 16px;
-  flex: 1;
-  min-height: 200px;
+  flex: 1 1 auto;
+  /* 必须允许收缩到 0，否则面板受 max-height 限制时内容区不会缩小，
+     overflow-y:auto 也就永远不触发，手机上会顶穿面板。 */
+  min-height: 0;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 .wm-main-content::-webkit-scrollbar { width: 5px; }
 .wm-main-content::-webkit-scrollbar-track { background: transparent; }
@@ -1166,3 +1174,34 @@
 .wm-theme-swatch--glass i:nth-child(1) { background: linear-gradient(135deg, #eef5ff, #d6e8ff); }
 .wm-theme-swatch--glass i:nth-child(2) { background: linear-gradient(135deg, #2f7df6, #5b9dff); }
 .wm-theme-swatch--glass i:nth-child(3) { background: linear-gradient(135deg, #ffffff, #bcd8f8); }
+
+/* ====== 面板底部拖动把手 ====== */
+.wm-panel-grip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 18px;
+  flex-shrink: 0;
+  cursor: grab;
+  background: var(--wm-face-ghost);
+  border-top: 1px solid var(--wm-line-soft);
+  touch-action: none;
+  user-select: none;
+}
+.wm-panel-grip:active { cursor: grabbing; }
+.wm-panel-grip span {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--wm-text-mute);
+  opacity: 0.6;
+  transition: opacity 0.2s, background 0.2s;
+}
+.wm-panel-grip:hover span { opacity: 1; background: var(--wm-cyan); }
+
+@media (max-width: 720px) {
+  /* 触屏上把手做大一点，手指才好按 */
+  .wm-panel-grip { height: 26px; gap: 6px; }
+  .wm-panel-grip span { width: 5px; height: 5px; }
+}
